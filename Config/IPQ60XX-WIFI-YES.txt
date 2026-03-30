@@ -4,8 +4,16 @@ CONFIG_TARGET_qualcommax_ipq60xx=y
 #设备列表
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
 CONFIG_TARGET_ROOTFS_PARTSIZE=1024
-CONFIG_PACKAGE_luci-app-oaf=y
-CONFIG_PACKAGE_kmod-mmc-block=y
+# 核心插件：Passwall 2 (唯一化，删除旧版)
 CONFIG_PACKAGE_luci-app-passwall2=y
 CONFIG_PACKAGE_luci-app-passwall2_Iptables_Transparent_Proxy=y
 CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy=y
+CONFIG_PACKAGE_luci-i18n-passwall2-zh-cn=y
+
+# 依赖与兼容性
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lib-ipkg=y
+
+# 其他功能
+CONFIG_PACKAGE_luci-app-oaf=y
+CONFIG_PACKAGE_kmod-mmc-block=y
