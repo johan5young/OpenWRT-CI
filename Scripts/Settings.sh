@@ -107,3 +107,6 @@ echo "CONFIG_PACKAGE_luci-app-qbittorrent=y" >> .config
 # 5. 存储驱动锁定 (NN6000 V2 硬盘识别关键)
 echo "CONFIG_PACKAGE_kmod-mmc-block=y" >> .config
 echo "CONFIG_PACKAGE_kmod-sdhci-msm=y" >> .config
+
+# 激活 iStore
+echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
