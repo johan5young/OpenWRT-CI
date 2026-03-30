@@ -112,3 +112,7 @@ echo "CONFIG_PACKAGE_kmod-sdhci-msm=y" >> .config
 echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
 
 echo "CONFIG_PACKAGE_luci-app-easytier=y" >> .config
+
+# 强制关闭 Tailscale，确保不进入固件
+echo "CONFIG_PACKAGE_luci-app-tailscale=n" >> .config
+echo "CONFIG_PACKAGE_tailscale=n" >> .config
