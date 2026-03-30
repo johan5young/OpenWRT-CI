@@ -85,6 +85,7 @@ echo "CONFIG_PACKAGE_luci-app-mosdns=y" >> .config
 echo "CONFIG_PACKAGE_luci-compat=y" >> .config
 echo "CONFIG_PACKAGE_xray-core=y" >> .config
 echo "CONFIG_PACKAGE_sing-box=y" >> .config
+echo "CONFIG_PACKAGE_luci-i18n-passwall2-zh-cn=y" >> .config
 
 # 2. 家长控制与系统增强
 echo "CONFIG_PACKAGE_luci-app-appfilter=y" >> .config
@@ -110,9 +111,12 @@ echo "CONFIG_PACKAGE_luci-app-qbittorrent=y" >> .config
 # 5. 存储驱动锁定 (NN6000 V2 硬盘识别关键)
 echo "CONFIG_PACKAGE_kmod-mmc-block=y" >> .config
 echo "CONFIG_PACKAGE_kmod-sdhci-msm=y" >> .config
-
 echo "CONFIG_PACKAGE_luci-app-easytier=y" >> .config
 
 # 强制关闭 Tailscale，确保不进入固件
 echo "CONFIG_PACKAGE_luci-app-tailscale=n" >> .config
 echo "CONFIG_PACKAGE_tailscale=n" >> .config
+
+# 依赖与兼容性
+echo "CONFIG_PACKAGE_luci-compat=y" >> .config
+echo "CONFIG_PACKAGE_luci-lib-ipkg=y" >> .config
