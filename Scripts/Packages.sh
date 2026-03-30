@@ -132,3 +132,5 @@ UPDATE_PACKAGE "luci-app-passwall" "Openwrt-Passwall/openwrt-passwall" "main"
 # 2. 更新 Passwall 2 依赖包 (如 sing-box, xray-core, geoview 等)
 # 这一步对应官方公告中对核心库的要求，同样使用作者函数以确保路径正确
 UPDATE_PACKAGE "passwall-packages" "Openwrt-Passwall/openwrt-passwall-packages" "main"
+# 选配：Lucky (大内网穿透/DDNS神器)
+UPDATE_PACKAGE "luci-app-lucky" "gdy666/luci-app-lucky" "main"
