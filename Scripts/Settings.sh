@@ -73,12 +73,37 @@ fi
 sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=100/g' .config
 sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=1024/g' .config
 
-# 强制内置核心插件
-echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
-echo "CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y" >> .config
-echo "CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y" >> .config
+# --- 插件强制内置开关 (基于最新 Packages.sh 列表) ---
 
-# 告诉编译器：别问，问就是把这些全部塞进固件里
-echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
-echo "CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y" >> .config
-echo "CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y" >> .config
+# 1. 核心出海 (Passwall 2 及配套)
+echo "CONFIG_PACKAGE_luci-app-passwall2=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-passwall2_Iptables_Transparent_Proxy=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-openlist2=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-mosdns=y" >> .config
+
+# 2. 家长控制与系统增强
+echo "CONFIG_PACKAGE_luci-app-appfilter=y" >> .config
+echo "CONFIG_PACKAGE_kmod-oaf=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-netwizard=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-advancedplus=y" >> .config
+
+# 3. 磁盘、网络与管理
+echo "CONFIG_PACKAGE_luci-app-partexp=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-diskman=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-quickfile=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-lucky=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-ddns-go=y" >> .config
+
+# 4. 实用工具与下载 (含 viking 和 netspeedtest 拆分包)
+echo "CONFIG_PACKAGE_luci-app-wolplus=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-timewol=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-netspeedtest=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-fancontrol=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-easytier=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-qbittorrent=y" >> .config
+
+# 5. 存储驱动锁定 (NN6000 V2 硬盘识别关键)
+echo "CONFIG_PACKAGE_kmod-mmc-block=y" >> .config
+echo "CONFIG_PACKAGE_kmod-sdhci-msm=y" >> .config
