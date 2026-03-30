@@ -110,3 +110,5 @@ echo "CONFIG_PACKAGE_kmod-sdhci-msm=y" >> .config
 
 # 激活 iStore
 echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
+
+echo "CONFIG_PACKAGE_luci-app-easytier=y" >> .config
