@@ -17,7 +17,7 @@ on:
       PACKAGE:
         description: '手动调整插件包，多个请用\n符号隔开。'
         required: false
-        default: 'luci-app-oaf\nluci-app-passwall\nluci-app-store' # 建议增加默认值
+        default: 'luci-app-oaf\nluci-app-passwall' # 建议增加默认值
         type: string
       TEST:
         description: '仅输出配置文件，不编译固件。'
