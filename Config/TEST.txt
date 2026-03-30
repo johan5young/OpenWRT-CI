@@ -160,14 +160,15 @@ CONFIG_PACKAGE_luci-app-banip=y
 CONFIG_PACKAGE_luci-app-acme=y
 CONFIG_PACKAGE_luci-app-arpbind=y
 CONFIG_PACKAGE_luci-app-usb-printer=y
-CONFIG_PACKAGE_luci-app-homeproxy=y
+CONFIG_PACKAGE_luci-app-homeproxy is not set
 CONFIG_PACKAGE_luci-app-alist=y
 CONFIG_PACKAGE_luci-app-oaf=y
 CONFIG_PACKAGE_luci-app-sqm=y
 CONFIG_PACKAGE_ariang=y
-CONFIG_PACKAGE_adguardhome=y
-CONFIG_PACKAGE_luci-app-adguardhome=y
+CONFIG_PACKAGE_adguardhome=no
+CONFIG_PACKAGE_luci-app-adguardhome=no
+CONFIG_PACKAGE_luci-app-lucky=y
 # CONFIG_PACKAGE_luci-app-filebrowser-go is not set
 # CONFIG_PACKAGE_luci-app-dockerman is not set
 # CONFIG_PACKAGE_luci-app-gecoosac is not set
-# CONFIG_PACKAGE_luci-app-lucky is not set
+# CONFIG_PACKAGE_luci-app-lucky=y
