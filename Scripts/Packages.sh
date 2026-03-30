@@ -122,13 +122,13 @@ UPDATE_VERSION() {
 UPDATE_VERSION "sing-box"
 #UPDATE_VERSION "tailscale"
 
-# 1. 强力清除固件源码自带的过时依赖（对应公告方法2）
-rm -rf ../feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
-rm -rf ../feeds/luci/applications/luci-app-passwall
+# =========================================================
+# 参照作者规范：强制更新 Passwall 2 核心组件
+# =========================================================
 
-# 2. 拉取真正的 Passwall 2 及其核心依赖包
-git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/passwall-packages
-git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall.git package/passwall-luci
+# 1. 更新 Passwall 2 主程序 (使用作者定义的函数，自动清理旧版并拉取新版)
+UPDATE_PACKAGE "luci-app-passwall" "Openwrt-Passwall/openwrt-passwall" "main"
 
-# 3. 针对 NN6000 V2 补齐 Geoview 依赖（公告强调的核心）
-# 只要上面的 git clone 成功，编译时勾选 luci-app-passwall 就会自动带上它
+# 2. 更新 Passwall 2 依赖包 (如 sing-box, xray-core, geoview 等)
+# 这一步对应官方公告中对核心库的要求，同样使用作者函数以确保路径正确
+UPDATE_PACKAGE "passwall-packages" "Openwrt-Passwall/openwrt-passwall-packages" "main"
