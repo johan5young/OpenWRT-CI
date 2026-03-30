@@ -82,6 +82,9 @@ echo "CONFIG_PACKAGE_luci-app-passwall2_Nftables_Transparent_Proxy=y" >> .config
 echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
 echo "CONFIG_PACKAGE_luci-app-openlist2=y" >> .config
 echo "CONFIG_PACKAGE_luci-app-mosdns=y" >> .config
+echo "CONFIG_PACKAGE_luci-compat=y" >> .config
+echo "CONFIG_PACKAGE_xray-core=y" >> .config
+echo "CONFIG_PACKAGE_sing-box=y" >> .config
 
 # 2. 家长控制与系统增强
 echo "CONFIG_PACKAGE_luci-app-appfilter=y" >> .config
