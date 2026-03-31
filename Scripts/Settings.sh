@@ -74,3 +74,6 @@ fi
 # 锁定分区大小
 sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=100/g' .config
 sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=1024/g' .config
+# 明确禁用 onionshare 及其相关的 python 依赖，减少编译压力
+sed -i 's/CONFIG_PACKAGE_onionshare=y/# CONFIG_PACKAGE_onionshare is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_python3-onionshare=y/# CONFIG_PACKAGE_python3-onionshare is not set/g' .config
