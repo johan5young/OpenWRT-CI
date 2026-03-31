@@ -126,7 +126,8 @@ CONFIG_PACKAGE_sing-box=y
 
 # 2. 家长控制与系统增强 (修正为 oaf 命名)
 CONFIG_PACKAGE_luci-app-oaf=y
-CONFIG_PACKAGE_kmod-oaf=y
+CONFIG_PACKAGE_open-app-filter=y
+CONFIG_PACKAGE_oaf=y
 CONFIG_PACKAGE_luci-app-netwizard=y
 CONFIG_PACKAGE_luci-app-advancedplus=y
 
