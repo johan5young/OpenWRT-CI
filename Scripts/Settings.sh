@@ -74,7 +74,3 @@ fi
 # 锁定分区大小
 sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=100/g' .config
 sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=1024/g' .config
-# 强制启用 Python3 基础环境和资源管理组件
-echo "CONFIG_PACKAGE_python3-light=y" >> .config
-echo "CONFIG_PACKAGE_python3-setuptools=y" >> .config
-echo "CONFIG_PACKAGE_python3-pkg-resources=y" >> .config
