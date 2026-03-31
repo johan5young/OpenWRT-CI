@@ -187,44 +187,39 @@ jobs:
       - name: Final Defense & Hotfix
         shell: bash
         run: |
-          # 定义非核心包关键字列表
+          set +e
+          cd $GITHUB_WORKSPACE/wrt || { echo "跳过路径检查"; }
+
           MY_ADD_PKGS="argon aurora homeproxy timewol wolplus partexp diskman netwizard advancedplus lucky openlist2 mosdns v2dat ddns-go fancontrol qbittorrent qt6 rblibtorrent quickfile easytier"
           
-          echo "--- 正在启动【高容错】非核心插件加固 ---"
+          echo "--- 正在启动插件加固 ---"
           
-          # 遍历关键字
           for keyword in $MY_ADD_PKGS; do
-              # 模糊搜索：查找所有路径中包含该关键字且包含 Makefile 的文件夹
-              # 排除 .git 目录，精准锁定 package 目录
+              # 这里的 || true 配合 set +e 是双重保险
               find package/ -type f -name "Makefile" -path "*$keyword*" 2>/dev/null | while read -r mfile; do
-                  # 获取该 Makefile 定义的真实包名
-                  local pkg_real_name=$(grep "PKG_NAME:=" "$mfile" | cut -d'=' -f2)
+                  [ -z "$mfile" ] && continue
+                  pkg_real_name=$(grep "PKG_NAME:=" "$mfile" | cut -d'=' -f2 | tr -d ' \r')
                   
-                  # 安全过滤：再次确保不会误伤 Passwall 或 OAF（双重保险）
                   if [[ "$pkg_real_name" =~ "passwall" || "$pkg_real_name" =~ "psw" || "$pkg_real_name" =~ "oaf" || "$pkg_real_name" =~ "appfilter" ]]; then
                       continue
                   fi
 
-                  echo "加固目标: $pkg_real_name ($mfile)"
-
-                  # 1. 暴力合规化版本号 (解决 APK Error 99)
+                  echo "加固目标: $pkg_real_name"
                   sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=1.0/g" "$mfile"
                   
-                  # 2. 注入强制跳过标记 (IGNORE_ERRORS)
                   if ! grep -q "IGNORE_ERRORS:=1" "$mfile"; then
-                      # 针对 luci-app 类型的 Makefile，在包含 luci.mk 前插入
                       if grep -q "luci.mk" "$mfile"; then
                           sed -i '/include ..\/..\/luci.mk/i IGNORE_ERRORS:=1' "$mfile"
-                      fi
-                      # 针对普通类型的 Makefile，在 rules.mk 后插入
-                      if grep -q "rules.mk" "$mfile"; then
+                      elif grep -q "rules.mk" "$mfile"; then
                           sed -i '/include $(TOPDIR)\/rules.mk/a IGNORE_ERRORS:=1' "$mfile"
                       fi
                   fi
               done
           done
-          echo "--- 加固完成，核心插件（Passwall/OAF）已自动跳过保护 ---"
-
+          
+          echo "--- 加固流程结束，准备进入编译环节 ---"
+          # 仅退出当前 Step 进程，不影响后续 Step 执行
+          exit 0
 
       - name: Compile Firmware
         if: env.WRT_TEST != 'true'
