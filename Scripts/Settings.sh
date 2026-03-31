@@ -77,3 +77,8 @@ sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=1024/g'
 # 明确禁用 onionshare 及其相关的 python 依赖，减少编译压力
 sed -i 's/CONFIG_PACKAGE_onionshare=y/# CONFIG_PACKAGE_onionshare is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_python3-onionshare=y/# CONFIG_PACKAGE_python3-onionshare is not set/g' .config
+# 1. 强制在配置文件中禁用 fail2ban 及其相关的所有 python 依赖
+sed -i 's/CONFIG_PACKAGE_fail2ban=y/# CONFIG_PACKAGE_fail2ban is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_luci-app-fail2ban=y/# CONFIG_PACKAGE_luci-app-fail2ban is not set/g' .config
+# 2. 彻底清理掉那些你不小心“带进来”的 Python 臃肿包
+sed -i 's/CONFIG_PACKAGE_python3-pkg-resources=y/# CONFIG_PACKAGE_python3-pkg-resources is not set/g' .config
