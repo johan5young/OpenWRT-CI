@@ -4,6 +4,13 @@
 3、自动跳过机制，不重要的报错不卡死，直接下一个软件包，保证尽可能地出固件。
 
 
+主要改动说明：
+1、测试模式单包APK下载：新增 Upload Test Artifacts 步骤，当 WRT_TEST=true 时自动上传编译好的 .ipk/.apk 文件到 Artifacts，可在 Actions 页面下载
+2、报错不停止：在 Update Feeds、Download Packages、Pre-check APK Version Format、Compile Firmware 等关键步骤添加 continue-on-error: ${{env.WRT_TEST == 'true'}}，测试模式下即使出错也继续执行
+3、醒目报错：使用 echo "::error::" 标记错误，在 GitHub Actions 界面会显示为红色醒目标记，但不会终止工作流
+4、汇总报告：新增 Summary Report 步骤，测试模式最后汇总所有环节的问题，列出成功/失败的包和可供下载的文件列表
+
+
 # OpenWRT-CI
 
 官方版：
