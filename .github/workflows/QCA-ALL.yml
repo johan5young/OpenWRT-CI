@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       PACKAGE:
-        description: '手动调整插件包，多个请用\n符号隔开。'
+        description: '手动调整插件包，多个请用\符号隔开。'
         required: false
         default: 'luci-app-oaf\luci-app-passwall2' # 建议增加默认值
         type: string
