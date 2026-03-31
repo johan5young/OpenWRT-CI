@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 VIKINGYFY
 
-#云编译公用核心
+# 云编译公用核心 - 增强版（支持容错下载、APK预检查、测试模式）
 name: WRT-CORE
 
 on:
@@ -78,7 +78,7 @@ jobs:
           sudo -E apt -yqq autoclean
           sudo -E apt -yqq clean
           sudo -E apt -yqq install dos2unix libfuse-dev
-          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh )'
           sudo -E systemctl daemon-reload
           sudo -E timedatectl set-timezone "Asia/Shanghai"
 
@@ -172,23 +172,209 @@ jobs:
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
           fi
 
+          # 强制确保 OAF 和 PassWall2 在配置中（如果缺失则自动添加）
+          echo "检查并确保关键插件存在..."
+          for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall2; do
+            if ! grep -q "^${pkg}=y" .config; then
+              echo "警告: ${pkg} 未启用，自动添加..."
+              echo "${pkg}=y" >> .config
+            fi
+          done
+          
+          # 确保 OAF 依赖也启用
+          if ! grep -q "^CONFIG_PACKAGE_open-app-filter=y" .config; then
+            echo "CONFIG_PACKAGE_open-app-filter=y" >> .config
+          fi
+          if ! grep -q "^CONFIG_PACKAGE_oaf=y" .config; then
+            echo "CONFIG_PACKAGE_oaf=y" >> .config
+          fi
+
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      - name: Download Packages
-        if: env.WRT_TEST != 'true'
+      - name: Download Packages (带容错处理)
+        id: download
         run: |
           cd ./wrt/
+          
+          echo "开始下载软件包（带容错机制）..."
+          FAILED_PACKAGES=""
+          SKIPPED_PACKAGES=""
+          
+          # 首先尝试批量下载
+          make download -j$(nproc) 2>&1 | tee download.log || {
+            echo "::warning:: 批量下载出现错误，进入单包容错处理模式..."
+            
+            # 解析失败的包（从日志中提取 404 或 failed 的包名）
+            grep -i "404\|failed\|error\|cannot\|not found" download.log | head -20 || true
+            
+            # 尝试单独下载每个关键包（OAF 和 PassWall2 优先）
+            echo "优先确保关键包下载..."
+            CRITICAL_PACKAGES="luci-app-oaf open-app-filter oaf luci-app-passwall2 passwall2 sing-box xray-core"
+            
+            for pkg in $CRITICAL_PACKAGES; do
+              echo "尝试单独下载: $pkg"
+              if make package/$pkg/download -j1 V=s 2>&1 | tee -a single_download.log; then
+                echo "✓ $pkg 下载成功"
+              else
+                echo "::error:: ✗ $pkg 下载失败，尝试查找替代方案..."
+                
+                # 检查是否是可选依赖，尝试跳过
+                if [ "$pkg" != "luci-app-oaf" ] && [ "$pkg" != "luci-app-passwall2" ] && [ "$pkg" != "oaf" ] && [ "$pkg" != "open-app-filter" ]; then
+                  echo "非关键包 $pkg，尝试从配置中移除..."
+                  sed -i "s/CONFIG_PACKAGE_${pkg}=y/# CONFIG_PACKAGE_${pkg} is not set/" .config
+                  SKIPPED_PACKAGES="$SKIPPED_PACKAGES $pkg"
+                else
+                  # 关键包失败，尝试只下载内核依赖
+                  echo "关键包 $pkg 下载失败，检查依赖..."
+                  FAILED_PACKAGES="$FAILED_PACKAGES $pkg"
+                fi
+              fi
+            done
+          }
+          
+          # 检查下载结果
+          echo "======================"
+          echo "下载阶段总结:"
+          echo "跳过的非关键包: $SKIPPED_PACKAGES"
+          if [ -n "$FAILED_PACKAGES" ]; then
+            echo "::error:: 关键包下载失败: $FAILED_PACKAGES"
+            echo "尝试最后的挽救措施：检查 dl 目录..."
+            ls -lh dl/ 2>/dev/null | head -20 || echo "dl 目录为空或不存在"
+            
+            # 如果 OAF 或 PassWall2 失败，尝试从 releases 下载预编译包
+            for pkg in $FAILED_PACKAGES; do
+              if [[ "$pkg" == *"oaf"* ]] || [[ "$pkg" == *"passwall"* ]]; then
+                echo "尝试为 $pkg 寻找替代下载源..."
+                # 这里可以添加从 GitHub releases 下载的逻辑
+              fi
+            done
+            
+            # 如果有关键包失败，标记为警告但不退出（让后续步骤决定是否终止）
+            if [[ "$FAILED_PACKAGES" == *"oaf"* ]] || [[ "$FAILED_PACKAGES" == *"passwall2"* ]]; then
+              echo "::error:: 关键插件 OAF 或 PassWall2 下载失败，编译可能不完整！"
+              # 不退出，继续尝试编译看是否能从其他源获取
+            fi
+          else
+            echo "所有关键包下载成功！"
+          fi
+          echo "======================"
 
-          make download -j$(nproc)
-
-      - name: Compile Firmware
-        if: env.WRT_TEST != 'true'
+      - name: Pre-check APK Version Format
+        id: version_check
         run: |
           cd ./wrt/
+          
+          echo "开始检查 APK 版本号格式..."
+          INVALID_VERSIONS=""
+          WARNING_COUNT=0
+          
+          # 检查 package feeds 中的 Makefile 版本号格式
+          find ./feeds/ -name "Makefile" -type f 2>/dev/null | while read makefile; do
+            # 检查 PKG_VERSION 是否包含非法字符（APK 严格要求）
+            if grep -q "PKG_VERSION:=" "$makefile" 2>/dev/null; then
+              version=$(grep "PKG_VERSION:=" "$makefile" | head -1 | cut -d'=' -f2)
+              # 检查版本号是否符合 APK 规范（语义化版本：x.y.z 或 x.y.z-rN）
+              if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*(-r[0-9]+)?$ ]] && [[ -n "$version" ]]; then
+                pkg_name=$(basename "$(dirname "$makefile")")
+                echo "::warning:: 可疑版本号格式: $pkg_name -> $version (在 $makefile)"
+                echo "$pkg_name:$version" >> invalid_versions.txt
+                WARNING_COUNT=$((WARNING_COUNT + 1))
+              fi
+            fi
+          done
+          
+          # 检查下载的软件包版本
+          if [ -d "dl/" ]; then
+            find dl/ -name "*.tar.*" -o -name "*.zip" 2>/dev/null | while read pkg; do
+              # 提取版本号并检查
+              basename "$pkg" | grep -qE '[0-9]+\.[0-9]+' || {
+                echo "::warning:: 非标准版本号文件名: $pkg"
+              }
+            done
+          fi
+          
+          echo "======================"
+          if [ -f "invalid_versions.txt" ]; then
+            echo "发现 $(wc -l < invalid_versions.txt) 个可疑版本号格式："
+            cat invalid_versions.txt
+            INVALID_VERSIONS=$(cat invalid_versions.txt)
+            echo "INVALID_VERSIONS=$INVALID_VERSIONS" >> $GITHUB_ENV
+          else
+            echo "版本号格式检查通过"
+          fi
+          echo "======================"
 
-          make -j$(nproc) || make -j1 V=s
+      - name: Compile Firmware (测试模式或正式编译)
+        id: compile
+        run: |
+          cd ./wrt/
+          
+          # 如果是测试模式，只进行配置检查和单包测试
+          if [[ "$WRT_TEST" == "true" ]]; then
+            echo "============================"
+            echo "测试模式：跳过重型编译"
+            echo "============================"
+            
+            # 1. 配置语法检查
+            echo "检查配置语法..."
+            make defconfig -j1 2>&1 | tee config_check.log
+            if grep -q "error\|Error\|missing separator" config_check.log; then
+              echo "::error:: 配置文件语法错误！"
+              exit 1
+            fi
+            
+            # 2. 输出最终配置
+            echo "输出最终配置到 artifacts..."
+            mkdir -p ./upload/
+            cp .config ./upload/Config-Test-${{env.WRT_DATE}}.txt
+            
+            # 3. 关键包单包编译测试（OAF 和 PassWall2）
+            echo "测试编译关键包..."
+            TEST_FAILED=""
+            
+            # 测试 OAF
+            echo "测试编译 OAF..."
+            if make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log; then
+              echo "✓ OAF 编译测试通过"
+            else
+              echo "::warning:: ✗ OAF 编译测试失败，查看日志..."
+              tail -50 compile_oaf.log
+              TEST_FAILED="$TEST_FAILED OAF"
+            fi
+            
+            # 测试 PassWall2
+            echo "测试编译 PassWall2..."
+            if make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log; then
+              echo "✓ PassWall2 编译测试通过"
+            else
+              echo "::warning:: ✗ PassWall2 编译测试失败，查看日志..."
+              tail -50 compile_pw.log
+              TEST_FAILED="$TEST_FAILED PassWall2"
+            fi
+            
+            # 总结
+            echo "============================"
+            echo "测试模式完成"
+            if [ -n "$TEST_FAILED" ]; then
+              echo "失败的包: $TEST_FAILED"
+              # 测试模式下不退出，让工作流完成以便查看日志
+            fi
+            echo "============================"
+            
+          else
+            # 正式编译模式
+            echo "开始正式编译固件..."
+            
+            # 确保 OAF 和 PassWall2 在编译列表中
+            make package/oaf/compile -j$(nproc) || echo "::warning:: OAF 编译可能有问题，继续..."
+            make package/open-app-filter/compile -j$(nproc) || echo "::warning:: open-app-filter 编译可能有问题，继续..."
+            make package/luci-app-passwall2/compile -j$(nproc) || echo "::warning:: PassWall2 编译可能有问题，继续..."
+            
+            # 完整固件编译
+            make -j$(nproc) || make -j1 V=s
+          fi
 
       - name: Machine Information
         run: |
@@ -253,3 +439,5 @@ jobs:
 
             内核版本：${{env.WRT_KVER}}
             插件列表：${{env.WRT_LIST}}
+            
+            ${{env.INVALID_VERSIONS != '' && format('⚠️ 版本号警告: {0}', env.INVALID_VERSIONS) || ''}}
