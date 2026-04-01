@@ -43,7 +43,7 @@ on:
       WRT_TEST:
         required: false
         type: string
-      WRT_SINGLE_TEST:            # 新增：测试模式下是否进行单包编译和host工具链构建
+      WRT_SINGLE_TEST:
         required: false
         type: string
 
@@ -61,7 +61,7 @@ env:
   WRT_SOURCE: ${{inputs.WRT_SOURCE}}
   WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
   WRT_TEST: ${{inputs.WRT_TEST}}
-  WRT_SINGLE_TEST: ${{inputs.WRT_SINGLE_TEST}}    # 新增
+  WRT_SINGLE_TEST: ${{inputs.WRT_SINGLE_TEST}}
 
 jobs:
   core:
@@ -192,11 +192,11 @@ jobs:
           $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      # ==================== 构建 Host 工具链（仅在正式模式或测试模式且启用单包测试时执行） ====================
+      # ==================== 构建 Host 工具链（仅在测试模式且启用单包测试时执行） ====================
       - name: Build Host Tools and Toolchain
         id: build_host_tools
-        # 正式模式（WRT_TEST != 'true'）总是构建；测试模式（WRT_TEST == 'true'）下仅当 WRT_SINGLE_TEST == 'true' 时构建
-        if: env.WRT_TEST != 'true' || env.WRT_SINGLE_TEST == 'true'
+        # 正式编译（WRT_TEST != 'true'）不执行；测试模式下仅当 WRT_SINGLE_TEST == 'true' 时执行
+        if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true'
         run: |
           cd ./wrt/
           echo "::group::Building host tools and toolchain"
@@ -344,7 +344,7 @@ jobs:
             
           else
             echo "开始正式编译固件..."
-            # 正式编译前再次确保下载完整（尤其关键包）
+            # 正式编译前确保下载完整
             make download -j$(nproc) || make download -j1 V=s
             # 全量编译
             make -j$(nproc) || make -j1 V=s
@@ -352,7 +352,7 @@ jobs:
 
       # ==================== 上传测试产物（仅测试模式） ====================
       - name: Upload Test Artifacts to Release
-        # 只有在测试模式且启用了单包编译，且是手动触发时才创建 Release
+        # 仅当测试模式、启用了单包编译、且是手动触发时，创建 Release
         if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true' && github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@master
         with:
@@ -377,8 +377,8 @@ jobs:
           draft: false
           fail_on_unmatched_files: false
 
-      # 如果不想创建 Release，或者单包测试未启用时使用 Artifacts 上传（备选）
       - name: Upload Test Artifacts (Fallback)
+        # 测试模式下，如果未启用单包编译或非手动触发，则上传 Artifacts
         if: env.WRT_TEST == 'true' && (env.WRT_SINGLE_TEST != 'true' || github.event_name != 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
