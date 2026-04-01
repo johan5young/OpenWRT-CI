@@ -212,19 +212,26 @@ jobs:
           cd ./wrt/
           echo "::group::下载软件包（批量模式）"
           
-          # 尝试批量下载
-          make download -j$(nproc) 2>&1 | tee download.log || {
-            echo "::warning::批量下载失败，进入单包容错模式..."
-          }
-
           # 定义关键包列表（与 Packages.sh 中的包名一致）
-          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 sing-box xray-core"
+          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 passwall2 sing-box xray-core"
+
+          # 尝试批量下载，并记录退出状态
+          BATCH_EXIT=0
+          make download -j$(nproc) 2>&1 | tee download.log || BATCH_EXIT=$?
 
           # 提取失败包名（基于常见错误信息）
           FAILED_PKGS=$(grep -E 'failed|error|cannot|not found' download.log | awk -F'/' '{print $(NF)}' | sed 's/\.git//;s/\.tar.*//' | sort -u | tr '\n' ' ')
           
-          # 合并关键包和失败包
-          ALL_FAILED=$(echo "$FAILED_PKGS $CRITICAL_PACKAGES" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+          # 决定需要重试的包列表
+          if [ $BATCH_EXIT -eq 0 ]; then
+            # 批量下载成功，只重试实际失败的包（通常为空）
+            ALL_FAILED="$FAILED_PKGS"
+            echo "批量下载成功，仅对失败包重试。"
+          else
+            # 批量下载失败，合并失败包和关键包进行重试
+            ALL_FAILED=$(echo "$FAILED_PKGS $CRITICAL_PACKAGES" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+            echo "批量下载失败，将对关键包和失败包进行重试。"
+          fi
           
           for pkg in $ALL_FAILED; do
             echo "尝试重试下载: $pkg"
@@ -239,8 +246,8 @@ jobs:
             if echo "$CRITICAL_PACKAGES" | grep -qw "$pkg"; then
               echo "关键包 $pkg 下载失败，尝试高级恢复..."
               
-              # 查找包的 Makefile（支持 package/ 和 feeds/ 路径）
-              MAKEFILE=$(find . -path "*/$pkg/Makefile" -type f -print -quit)
+              # 查找包的 Makefile（支持 package/ 和 feeds/ 路径，以及 OpenAppFilter 子目录）
+              MAKEFILE=$(find . -path "*/$pkg/Makefile" -o -path "*/OpenAppFilter/$pkg/Makefile" -type f -print -quit)
               if [ -f "$MAKEFILE" ]; then
                 # 提取 PKG_SOURCE_PROTO 判断是否为 Git 包
                 PROTO=$(grep -m1 'PKG_SOURCE_PROTO:=' "$MAKEFILE" | cut -d'=' -f2)
@@ -301,30 +308,22 @@ jobs:
                   unset DOWNLOAD_MIRROR
                 fi
               else
-                # ========== 新增：找不到 Makefile 时的直接克隆 ==========
+                # 如果连 Makefile 都找不到，可能是包未被正确放置，尝试直接克隆到 package/ 目录
                 echo "未找到 $pkg 的 Makefile，尝试直接克隆到 package/ 目录..."
                 case "$pkg" in
-                  passwall2)
+                  passwall2|luci-app-passwall2)
                     GIT_URL="https://github.com/Openwrt-Passwall/openwrt-passwall2.git"
-                    TARGET_DIR="package/passwall2"
-                    # 先删除旧目录
-                    rm -rf "$TARGET_DIR"
-                    git clone --depth 1 "$GIT_URL" temp_repo
-                    cp -rf temp_repo/passwall2 "$TARGET_DIR"
-                    rm -rf temp_repo
-                    if [ -d "$TARGET_DIR" ]; then
-                      echo "✓ $pkg 直接克隆成功"
-                      continue
+                    # 根据包名决定克隆子目录
+                    if [ "$pkg" = "passwall2" ]; then
+                      TARGET_DIR="package/passwall2"
+                      SUBDIR="passwall2"
                     else
-                      echo "::error::✗ $pkg 直接克隆失败"
+                      TARGET_DIR="package/luci-app-passwall2"
+                      SUBDIR="luci-app-passwall2"
                     fi
-                    ;;
-                  luci-app-passwall2)
-                    GIT_URL="https://github.com/Openwrt-Passwall/openwrt-passwall2.git"
-                    TARGET_DIR="package/luci-app-passwall2"
                     rm -rf "$TARGET_DIR"
                     git clone --depth 1 "$GIT_URL" temp_repo
-                    cp -rf temp_repo/luci-app-passwall2 "$TARGET_DIR"
+                    cp -rf "temp_repo/$SUBDIR" "$TARGET_DIR"
                     rm -rf temp_repo
                     if [ -d "$TARGET_DIR" ]; then
                       echo "✓ $pkg 直接克隆成功"
@@ -339,6 +338,10 @@ jobs:
                     rm -rf "$TARGET_DIR"
                     git clone --depth 1 "$GIT_URL" "$TARGET_DIR"
                     if [ -d "$TARGET_DIR" ]; then
+                      # 如果包名是 luci-app-oaf，则需要重命名
+                      if [ "$pkg" = "luci-app-oaf" ] && [ -d "$TARGET_DIR/luci-app-appfilter" ]; then
+                        mv -f "$TARGET_DIR/luci-app-appfilter" "$TARGET_DIR/luci-app-oaf"
+                      fi
                       echo "✓ $pkg 直接克隆成功"
                       continue
                     else
