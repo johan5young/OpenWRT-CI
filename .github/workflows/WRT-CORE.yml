@@ -319,7 +319,7 @@ jobs:
           echo "::endgroup::"
 
       # ==================== 编译固件（测试模式/正式模式） ====================
-      - name: Compile Firmware (测试模式或正式编译)
+            - name: Compile Firmware (测试模式或正式编译)
         id: compile
         run: |
           cd ./wrt/
@@ -331,19 +331,20 @@ jobs:
             
             mkdir -p ./test_output/
             
-            # 1. 配置语法检查（直接检查 make defconfig 返回值）
+            # 1. 配置语法检查（改进版）
             echo "[1/4] 配置语法检查..."
-            if make defconfig -j1 2>&1 | tee config_check.log; then
+            make defconfig -j1 2>&1 | tee config_check.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
               echo "✓ 配置语法检查通过"
             else
-              echo "::error::配置文件语法错误！"
+              echo "::error::配置文件生成失败！"
               cp config_check.log ./test_output/
             fi
             
-            # 2. 检查关键包是否存在（通用 find 方式）
+            # 2. 检查关键包是否存在（使用通用 find）
             echo "[2/4] 检查关键包..."
             for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall2; do
-              if find . -path "*/$pkg" -type d | grep -q .; then
+              if find . -path "*/$pkg" -type d -print -quit | grep -q .; then
                 echo "✓ $pkg 包存在"
               else
                 echo "::error::✗ $pkg 包不存在"
@@ -412,7 +413,7 @@ jobs:
             
           else
             echo "开始正式编译固件..."
-            # 正式编译前确保下载完整
+            # 正式编译前再次确保下载完整
             make download -j$(nproc) || make download -j1 V=s
             # 全量编译
             make -j$(nproc) || make -j1 V=s
