@@ -218,7 +218,7 @@ jobs:
           }
 
           # 定义关键包列表（与 Packages.sh 中的包名一致）
-          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 passwall2 sing-box xray-core"
+          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 sing-box xray-core"
 
           # 提取失败包名（基于常见错误信息）
           FAILED_PKGS=$(grep -E 'failed|error|cannot|not found' download.log | awk -F'/' '{print $(NF)}' | sed 's/\.git//;s/\.tar.*//' | sort -u | tr '\n' ' ')
