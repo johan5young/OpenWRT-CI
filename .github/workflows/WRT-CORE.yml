@@ -268,7 +268,6 @@ jobs:
                         FULL_URL="${MIRROR}${GIT_URL#https://}"
                       fi
                       echo "尝试从 $FULL_URL 克隆..."
-                      # 先克隆（不指定分支，获取全部历史），然后切换到指定 commit
                       if git clone --depth 1 "$FULL_URL" "$TARGET_DIR" 2>/dev/null; then
                         cd "$TARGET_DIR"
                         if git fetch --depth 1 origin "$GIT_VERSION" && git checkout "$GIT_VERSION"; then
@@ -285,7 +284,6 @@ jobs:
                     done
                     
                     if [ "$GIT_CLONE_SUCCESS" = true ]; then
-                      # 创建 dl 目录下的 .download 标记文件（让 make 认为下载完成）
                       touch "$TARGET_DIR/.download"
                       echo "✓ $pkg 通过 Git 手动克隆成功"
                       continue
@@ -303,7 +301,54 @@ jobs:
                   unset DOWNLOAD_MIRROR
                 fi
               else
-                echo "未找到 $pkg 的 Makefile，跳过"
+                # ========== 新增：找不到 Makefile 时的直接克隆 ==========
+                echo "未找到 $pkg 的 Makefile，尝试直接克隆到 package/ 目录..."
+                case "$pkg" in
+                  passwall2)
+                    GIT_URL="https://github.com/Openwrt-Passwall/openwrt-passwall2.git"
+                    TARGET_DIR="package/passwall2"
+                    # 先删除旧目录
+                    rm -rf "$TARGET_DIR"
+                    git clone --depth 1 "$GIT_URL" temp_repo
+                    cp -rf temp_repo/passwall2 "$TARGET_DIR"
+                    rm -rf temp_repo
+                    if [ -d "$TARGET_DIR" ]; then
+                      echo "✓ $pkg 直接克隆成功"
+                      continue
+                    else
+                      echo "::error::✗ $pkg 直接克隆失败"
+                    fi
+                    ;;
+                  luci-app-passwall2)
+                    GIT_URL="https://github.com/Openwrt-Passwall/openwrt-passwall2.git"
+                    TARGET_DIR="package/luci-app-passwall2"
+                    rm -rf "$TARGET_DIR"
+                    git clone --depth 1 "$GIT_URL" temp_repo
+                    cp -rf temp_repo/luci-app-passwall2 "$TARGET_DIR"
+                    rm -rf temp_repo
+                    if [ -d "$TARGET_DIR" ]; then
+                      echo "✓ $pkg 直接克隆成功"
+                      continue
+                    else
+                      echo "::error::✗ $pkg 直接克隆失败"
+                    fi
+                    ;;
+                  oaf|open-app-filter|luci-app-oaf)
+                    GIT_URL="https://github.com/destan19/OpenAppFilter.git"
+                    TARGET_DIR="package/OpenAppFilter"
+                    rm -rf "$TARGET_DIR"
+                    git clone --depth 1 "$GIT_URL" "$TARGET_DIR"
+                    if [ -d "$TARGET_DIR" ]; then
+                      echo "✓ $pkg 直接克隆成功"
+                      continue
+                    else
+                      echo "::error::✗ $pkg 直接克隆失败"
+                    fi
+                    ;;
+                  *)
+                    echo "未知包 $pkg，跳过直接克隆"
+                    ;;
+                esac
               fi
             else
               echo "::error::✗ 非关键包 $pkg 下载失败，跳过（可能不影响编译）"
