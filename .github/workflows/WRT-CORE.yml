@@ -217,7 +217,7 @@ jobs:
             echo "::warning::批量下载失败，进入单包容错模式..."
           }
 
-          # 定义关键包列表（如果这些包下载失败，额外尝试镜像和 Git 克隆）
+          # 定义关键包列表（与 Packages.sh 中的包名一致）
           CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 passwall2 sing-box xray-core"
 
           # 提取失败包名（基于常见错误信息）
@@ -239,15 +239,16 @@ jobs:
             if echo "$CRITICAL_PACKAGES" | grep -qw "$pkg"; then
               echo "关键包 $pkg 下载失败，尝试高级恢复..."
               
-              # 检查包的 Makefile 是否存在
-              if [ -f "package/$pkg/Makefile" ]; then
+              # 查找包的 Makefile（支持 package/ 和 feeds/ 路径）
+              MAKEFILE=$(find . -path "*/$pkg/Makefile" -type f -print -quit)
+              if [ -f "$MAKEFILE" ]; then
                 # 提取 PKG_SOURCE_PROTO 判断是否为 Git 包
-                PROTO=$(grep -m1 'PKG_SOURCE_PROTO:=' package/$pkg/Makefile | cut -d'=' -f2)
+                PROTO=$(grep -m1 'PKG_SOURCE_PROTO:=' "$MAKEFILE" | cut -d'=' -f2)
                 if [ "$PROTO" = "git" ]; then
                   # 提取 Git 仓库 URL 和版本
-                  GIT_URL=$(grep -m1 'PKG_SOURCE_URL:=' package/$pkg/Makefile | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
-                  GIT_VERSION=$(grep -m1 'PKG_SOURCE_VERSION:=' package/$pkg/Makefile | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
-                  PKG_NAME=$(grep -m1 'PKG_NAME:=' package/$pkg/Makefile | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  GIT_URL=$(grep -m1 'PKG_SOURCE_URL:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  GIT_VERSION=$(grep -m1 'PKG_SOURCE_VERSION:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  PKG_NAME=$(grep -m1 'PKG_NAME:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
                   
                   if [ -n "$GIT_URL" ] && [ -n "$GIT_VERSION" ]; then
                     echo "检测到 Git 包: $pkg"
@@ -258,7 +259,7 @@ jobs:
                     TARGET_DIR="dl/${PKG_NAME}-${GIT_VERSION}"
                     mkdir -p "$TARGET_DIR"
                     
-                    # 尝试使用 GitHub 镜像克隆
+                    # 尝试从 GitHub 官方及镜像克隆
                     GIT_CLONE_SUCCESS=false
                     for MIRROR in "" "https://ghproxy.com/" "https://github.moeyy.xyz/"; do
                       if [ -z "$MIRROR" ]; then
@@ -267,10 +268,18 @@ jobs:
                         FULL_URL="${MIRROR}${GIT_URL#https://}"
                       fi
                       echo "尝试从 $FULL_URL 克隆..."
-                      if git clone --depth 1 --branch "$GIT_VERSION" "$FULL_URL" "$TARGET_DIR" 2>/dev/null; then
-                        GIT_CLONE_SUCCESS=true
-                        echo "✓ Git 克隆成功"
-                        break
+                      # 先克隆（不指定分支，获取全部历史），然后切换到指定 commit
+                      if git clone --depth 1 "$FULL_URL" "$TARGET_DIR" 2>/dev/null; then
+                        cd "$TARGET_DIR"
+                        if git fetch --depth 1 origin "$GIT_VERSION" && git checkout "$GIT_VERSION"; then
+                          GIT_CLONE_SUCCESS=true
+                          echo "✓ Git 克隆成功"
+                          cd - >/dev/null
+                          break
+                        else
+                          echo "无法切换到版本 $GIT_VERSION，放弃此镜像"
+                          cd - >/dev/null
+                        fi
                       fi
                       rm -rf "$TARGET_DIR"
                     done
@@ -294,7 +303,7 @@ jobs:
                   unset DOWNLOAD_MIRROR
                 fi
               else
-                echo "未找到 package/$pkg/Makefile，跳过"
+                echo "未找到 $pkg 的 Makefile，跳过"
               fi
             else
               echo "::error::✗ 非关键包 $pkg 下载失败，跳过（可能不影响编译）"
