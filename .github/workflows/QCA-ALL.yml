@@ -23,6 +23,11 @@ on:
         default: 'false'
         required: false
         type: boolean
+      SINGLE_PKG_TEST:               # 新增：控制测试模式下是否进行单包编译和host工具链构建
+        description: '测试模式下进行单包编译和host工具链构建（耗时）'
+        default: false
+        required: false
+        type: boolean
 
 #CI权限
 permissions: write-all
@@ -66,3 +71,5 @@ jobs:
       WRT_PACKAGE: ${{inputs.PACKAGE}}
       #仅输出配置文件
       WRT_TEST: ${{inputs.TEST}}
+      #新增：测试模式下是否执行单包编译和host工具链构建
+      WRT_SINGLE_TEST: ${{inputs.SINGLE_PKG_TEST}}
