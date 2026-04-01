@@ -2,7 +2,7 @@
 # Copyright (C) 2026 VIKINGYFY
 
 # 云编译公用核心 - 增强版（支持容错下载、多源镜像、测试模式）
-name: WRT-CORE
+name: WRT-CORE2
 
 on:
   workflow_call:
