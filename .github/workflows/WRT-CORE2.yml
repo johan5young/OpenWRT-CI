@@ -2,7 +2,7 @@
 # Copyright (C) 2026 VIKINGYFY
 
 # 云编译公用核心 - 增强版（支持容错下载、多源镜像、测试模式）
-name: WRT-CORE2
+name: WRT-CORE
 
 on:
   workflow_call:
@@ -325,6 +325,7 @@ jobs:
           cd ./wrt/
           
           if [[ "$WRT_TEST" == "true" ]]; then
+            # ========== 测试模式 ==========
             echo "============================"
             echo "测试模式：只进行配置检查和单包编译"
             echo "============================"
@@ -412,28 +413,40 @@ jobs:
             echo "============================"
             
           else
+            # ========== 正式编译 ==========
             echo "开始正式编译固件..."
+            
             # 正式编译前再次确保下载完整
+            echo "确保所有软件包源码已下载..."
             make download -j$(nproc) || make download -j1 V=s
 
-            # 全量编译，允许非核心包错误继续，并保存日志
+            # 全量编译，允许非核心包错误继续，同时保存详细日志
             echo "开始全量编译（允许非核心包失败继续）..."
+            # 使用 -k 继续编译，将输出同时打印并保存到 build.log
+            # 使用 || true 确保 make 失败时步骤不会立即退出
             make -j$(nproc) -k 2>&1 | tee build.log || true
 
-            # 检查核心包是否在日志中出现错误
+            # 定义核心包列表（这些包失败必须中止编译）
             CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2"
             CORE_FAILED=0
+
+            # 在 build.log 中搜索核心包的编译错误
+            echo "检查核心包编译状态..."
             for pkg in $CORE_PACKAGES; do
-              if grep -q "make\[.*\]: \*\*\* \[.*package/$pkg.*\] Error" build.log; then
+              # 搜索常见错误模式：make[数字] *** 目标名 错误，以及具体包路径
+              if grep -q -E "(make\[[0-9]+\]: \*\*\* \[.*package/$pkg.*\] Error|package/$pkg failed to build)" build.log; then
                 echo "::error::核心包 $pkg 编译失败！"
                 CORE_FAILED=1
               fi
             done
+
             if [ $CORE_FAILED -eq 1 ]; then
+              echo "::error::由于核心包编译失败，中止编译。"
               exit 1
             fi
 
             # 最终检查固件是否生成
+            echo "检查固件生成情况..."
             if [ ! -d "bin/targets" ] || [ -z "$(find bin/targets -name '*.bin' -o -name '*.img' -o -name '*.trx' 2>/dev/null)" ]; then
               echo "::error::未生成任何固件文件，编译完全失败！"
               exit 1
