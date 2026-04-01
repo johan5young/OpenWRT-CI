@@ -108,7 +108,6 @@ UPDATE_PACKAGE "passwall-packages" "Openwrt-Passwall/openwrt-passwall-packages" 
 # 拉取 luci-app-passwall2（注意包名是 luci-app-passwall2）
 UPDATE_PACKAGE "luci-app-passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 
-
 # 拉取 OpenAppFilter（包含 oaf 和 luci-app-appfilter）
 UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "open-app-filter luci-app-appfilter oaf"
 # 克隆仓库
@@ -131,6 +130,4 @@ UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"
 UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"
 UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
-# 拉取 OAF (OpenAppFilter) 插件
-# 注意：会删除旧的 open-app-filter, luci-app-oaf, oaf 避免冲突
-UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf"
+
