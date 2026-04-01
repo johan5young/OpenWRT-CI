@@ -370,14 +370,13 @@ jobs:
             
             mkdir -p ./test_output/
             
-            # 1. 配置语法检查
+            # 1. 配置语法检查（直接检查 make defconfig 返回值）
             echo "[1/4] 配置语法检查..."
-            make defconfig -j1 2>&1 | tee config_check.log
-            if grep -q "error\|Error\|missing separator" config_check.log; then
+            if make defconfig -j1 2>&1 | tee config_check.log; then
+              echo "✓ 配置语法检查通过"
+            else
               echo "::error::配置文件语法错误！"
               cp config_check.log ./test_output/
-            else
-              echo "✓ 配置语法检查通过"
             fi
             
             # 2. 检查关键包是否存在（通用 find 方式）
