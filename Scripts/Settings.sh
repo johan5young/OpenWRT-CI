@@ -74,11 +74,18 @@ fi
 # 锁定分区大小
 sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=100/g' .config
 sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=1024/g' .config
-# 明确禁用 onionshare 及其相关的 python 依赖，减少编译压力
-sed -i 's/CONFIG_PACKAGE_onionshare=y/# CONFIG_PACKAGE_onionshare is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_python3-onionshare=y/# CONFIG_PACKAGE_python3-onionshare is not set/g' .config
-# 1. 强制在配置文件中禁用 fail2ban 及其相关的所有 python 依赖
-sed -i 's/CONFIG_PACKAGE_fail2ban=y/# CONFIG_PACKAGE_fail2ban is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_luci-app-fail2ban=y/# CONFIG_PACKAGE_luci-app-fail2ban is not set/g' .config
-# 2. 彻底清理掉那些你不小心“带进来”的 Python 臃肿包
-sed -i 's/CONFIG_PACKAGE_python3-pkg-resources=y/# CONFIG_PACKAGE_python3-pkg-resources is not set/g' .config
+# 补齐 Python3 核心运行环境 (彻底消除依赖警告)
+# ---------------------------------------------------------
+# 基础解释器
+echo "CONFIG_PACKAGE_python3=y" >> .config
+echo "CONFIG_PACKAGE_python3-light=y" >> .config
+echo "CONFIG_PACKAGE_python3-base=y" >> .config
+
+# 关键资源管理组件 (解决 fail2ban 和 setools 的报错)
+echo "CONFIG_PACKAGE_python3-pkg-resources=y" >> .config
+echo "CONFIG_PACKAGE_python3-setuptools=y" >> .config
+
+# 常用基础库 (预防 onionshare 等软件的类似警告)
+echo "CONFIG_PACKAGE_python3-codecs=y" >> .config
+echo "CONFIG_PACKAGE_python3-logging=y" >> .config
+echo "CONFIG_PACKAGE_python3-openssl=y" >> .config
