@@ -147,6 +147,16 @@ jobs:
             echo "caches cleanup done!"
           fi
 
+      - name: Build Host Tools and Toolchain
+        id: build_tools
+        if: env.WRT_TEST != 'true' || steps.check-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/
+          echo "::group::Building host tools and toolchain"
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+          echo "::endgroup::"
+      
       - name: Update Feeds
         id: update_feeds
         continue-on-error: ${{env.WRT_TEST == 'true'}}
@@ -188,6 +198,17 @@ jobs:
           $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
+      - name: Build Host Tools and Toolchain
+        id: build_tools
+        # 正式模式总是构建（保证环境完整），测试模式下只在缓存未命中时构建
+        if: env.WRT_TEST != 'true' || steps.check-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/
+          echo "::group::Building host tools and toolchain"
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+          echo "::endgroup::"
+      
       - name: Download Packages (带容错处理)
         id: download
         continue-on-error: ${{env.WRT_TEST == 'true'}}
