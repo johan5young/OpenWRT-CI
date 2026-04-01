@@ -146,16 +146,6 @@ jobs:
 
             echo "caches cleanup done!"
           fi
-
-      - name: Build Host Tools and Toolchain
-        id: build_tools
-        if: env.WRT_TEST != 'true' || steps.check-cache.outputs.cache-hit != 'true'
-        run: |
-          cd ./wrt/
-          echo "::group::Building host tools and toolchain"
-          make tools/install -j$(nproc)
-          make toolchain/install -j$(nproc)
-          echo "::endgroup::"
       
       - name: Update Feeds
         id: update_feeds
