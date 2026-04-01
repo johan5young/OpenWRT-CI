@@ -1,0 +1,575 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 VIKINGYFY
+
+# 云编译公用核心 - 增强版（支持容错下载、多源镜像、测试模式）
+name: WRT-CORE3
+
+on:
+  workflow_call:
+    inputs:
+      WRT_CONFIG:
+        required: true
+        type: string
+      WRT_THEME:
+        required: true
+        type: string
+      WRT_NAME:
+        required: true
+        type: string
+      WRT_SSID:
+        required: true
+        type: string
+      WRT_WORD:
+        required: true
+        type: string
+      WRT_IP:
+        required: true
+        type: string
+      WRT_PW:
+        required: true
+        type: string
+      WRT_REPO:
+        required: true
+        type: string
+      WRT_BRANCH:
+        required: true
+        type: string
+      WRT_SOURCE:
+        required: true
+        type: string
+      WRT_PACKAGE:
+        required: false
+        type: string
+      WRT_TEST:
+        required: false
+        type: string
+      WRT_SINGLE_TEST:
+        required: false
+        type: string
+
+env:
+  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+  WRT_CONFIG: ${{inputs.WRT_CONFIG}}
+  WRT_THEME: ${{inputs.WRT_THEME}}
+  WRT_NAME: ${{inputs.WRT_NAME}}
+  WRT_SSID: ${{inputs.WRT_SSID}}
+  WRT_WORD: ${{inputs.WRT_WORD}}
+  WRT_IP: ${{inputs.WRT_IP}}
+  WRT_PW: ${{inputs.WRT_PW}}
+  WRT_REPO: ${{inputs.WRT_REPO}}
+  WRT_BRANCH: ${{inputs.WRT_BRANCH}}
+  WRT_SOURCE: ${{inputs.WRT_SOURCE}}
+  WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
+  WRT_TEST: ${{inputs.WRT_TEST}}
+  WRT_SINGLE_TEST: ${{inputs.WRT_SINGLE_TEST}}
+
+jobs:
+  core:
+    name: ${{inputs.WRT_SOURCE}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Projects
+        uses: actions/checkout@main
+
+      - name: Initialization Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt -yqq purge firefox
+          sudo -E apt -yqq update
+          sudo -E apt -yqq full-upgrade
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E apt -yqq install dos2unix libfuse-dev
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh )'
+          sudo -E systemctl daemon-reload
+          sudo -E timedatectl set-timezone "Asia/Shanghai"
+
+          sudo mkdir -p /mnt/build_wrt
+          sudo chown $USER:$USER /mnt/build_wrt
+          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+
+      - name: Initialization Values
+        run: |
+          echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
+          echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}" >> $GITHUB_ENV
+          echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
+          echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
+          echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV
+          echo "WRT_KVER=none" >> $GITHUB_ENV
+          echo "WRT_LIST=none" >> $GITHUB_ENV
+
+      - name: Clone Code
+        run: |
+          git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
+
+          cd ./wrt/ && echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+
+          PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
+          if [ -f "$PROJECT_MIRRORS_FILE" ]; then
+            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
+          fi
+
+      - name: Check Scripts
+        run: |
+          find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
+
+      - name: Check Caches
+        id: check-cache
+        if: env.WRT_TEST != 'true'
+        uses: actions/cache@main
+        with:
+          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
+          restore-keys: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
+          path: |
+            ./wrt/.ccache
+            ./wrt/staging_dir/host*
+            ./wrt/staging_dir/tool*
+
+      - name: Update Caches
+        if: env.WRT_TEST != 'true'
+        run: |
+          if [ -d "./wrt/staging_dir" ]; then
+            find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
+              find "$DIR" -type f -exec touch {} +
+            done
+
+            mkdir -p ./wrt/tmp && echo "1" > ./wrt/tmp/.build
+
+            echo "toolchain skiped done!"
+          else
+            echo "caches missed!"
+          fi
+
+          if ${{steps.check-cache.outputs.cache-hit != 'true'}}; then
+            CACHE_LIST=$(gh cache list --key "$WRT_CONFIG-$WRT_INFO" | cut -f 1)
+            for CACHE_KEY in $CACHE_LIST; do
+              gh cache delete $CACHE_KEY
+            done
+
+            echo "caches cleanup done!"
+          fi
+
+      - name: Update Feeds
+        id: update_feeds
+        continue-on-error: ${{env.WRT_TEST == 'true'}}
+        run: |
+          cd ./wrt/
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Custom Packages
+        run: |
+          cd ./wrt/package/
+          $GITHUB_WORKSPACE/Scripts/Packages.sh
+          $GITHUB_WORKSPACE/Scripts/Handles.sh
+
+      - name: Custom Settings
+        run: |
+          cd ./wrt/
+
+          if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
+          else
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
+          fi
+
+          echo "检查并确保关键插件存在..."
+          for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall2; do
+            if ! grep -q "^${pkg}=y" .config; then
+              echo "${pkg}=y" >> .config
+            fi
+          done
+          
+          if ! grep -q "^CONFIG_PACKAGE_open-app-filter=y" .config; then
+            echo "CONFIG_PACKAGE_open-app-filter=y" >> .config
+          fi
+          if ! grep -q "^CONFIG_PACKAGE_oaf=y" .config; then
+            echo "CONFIG_PACKAGE_oaf=y" >> .config
+          fi
+
+          $GITHUB_WORKSPACE/Scripts/Settings.sh
+          make defconfig -j$(nproc) && make clean -j$(nproc)
+
+      # ==================== 构建 Host 工具链（仅在测试模式且启用单包测试时执行） ====================
+      - name: Build Host Tools and Toolchain
+        id: build_host_tools
+        # 正式编译（WRT_TEST != 'true'）不执行；测试模式下仅当 WRT_SINGLE_TEST == 'true' 时执行
+        if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true'
+        run: |
+          cd ./wrt/
+          echo "::group::Building host tools and toolchain"
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+          echo "::endgroup::"
+
+      # ==================== 增强下载容错（优化版，避免重复循环） ====================
+      - name: Download Packages (增强容错)
+        id: download
+        continue-on-error: ${{env.WRT_TEST == 'true'}}
+        run: |
+          cd ./wrt/
+          echo "::group::下载软件包（批量模式）"
+          
+          # 尝试批量下载
+          make download -j$(nproc) 2>&1 | tee download.log || {
+            echo "::warning::批量下载失败，进入单包容错模式..."
+          }
+
+          # 定义关键包列表
+          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 sing-box xray-core"
+
+          # 提取失败包名（仅当下载失败时）
+          FAILED_PKGS=""
+          if grep -q -E 'failed|error|cannot|not found' download.log; then
+              FAILED_PKGS=$(grep -E 'failed|error|cannot|not found' download.log | awk -F'/' '{print $(NF)}' | sed 's/\.git//;s/\.tar.*//' | sort -u | tr '\n' ' ')
+          fi
+          
+          # 检查关键包是否已在 dl/ 中存在，若不存在则加入重试列表
+          MISSING_CRITICAL=""
+          for pkg in $CRITICAL_PACKAGES; do
+              if ! ls dl/${pkg}* 1>/dev/null 2>&1; then
+                  MISSING_CRITICAL="$MISSING_CRITICAL $pkg"
+              fi
+          done
+          
+          # 合并失败包和缺失的关键包
+          ALL_FAILED=$(echo "$FAILED_PKGS $MISSING_CRITICAL" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+          
+          for pkg in $ALL_FAILED; do
+            echo "尝试重试下载: $pkg"
+            
+            # 尝试默认方式
+            if make package/$pkg/download -j1 V=s; then
+              echo "✓ $pkg 下载成功"
+              continue
+            fi
+            
+            # 对于关键包，尝试更高级的恢复手段（镜像或手动克隆）
+            if echo "$CRITICAL_PACKAGES" | grep -qw "$pkg"; then
+              echo "关键包 $pkg 下载失败，尝试高级恢复..."
+              
+              # 查找包的 Makefile
+              MAKEFILE=$(find . -path "*/$pkg/Makefile" -type f -print -quit)
+              if [ -f "$MAKEFILE" ]; then
+                PROTO=$(grep -m1 'PKG_SOURCE_PROTO:=' "$MAKEFILE" | cut -d'=' -f2)
+                if [ "$PROTO" = "git" ]; then
+                  # Git 包，尝试手动克隆
+                  GIT_URL=$(grep -m1 'PKG_SOURCE_URL:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  GIT_VERSION=$(grep -m1 'PKG_SOURCE_VERSION:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  PKG_NAME=$(grep -m1 'PKG_NAME:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  
+                  if [ -n "$GIT_URL" ] && [ -n "$GIT_VERSION" ]; then
+                    echo "检测到 Git 包: $pkg"
+                    echo "  URL: $GIT_URL"
+                    echo "  VERSION: $GIT_VERSION"
+                    
+                    TARGET_DIR="dl/${PKG_NAME}-${GIT_VERSION}"
+                    mkdir -p "$TARGET_DIR"
+                    
+                    GIT_CLONE_SUCCESS=false
+                    for MIRROR in "" "https://ghproxy.com/" "https://github.moeyy.xyz/"; do
+                      if [ -z "$MIRROR" ]; then
+                        FULL_URL="$GIT_URL"
+                      else
+                        FULL_URL="${MIRROR}${GIT_URL#https://}"
+                      fi
+                      echo "尝试从 $FULL_URL 克隆..."
+                      if git clone --depth 1 "$FULL_URL" "$TARGET_DIR" 2>/dev/null; then
+                        cd "$TARGET_DIR"
+                        if git fetch --depth 1 origin "$GIT_VERSION" && git checkout "$GIT_VERSION"; then
+                          GIT_CLONE_SUCCESS=true
+                          echo "✓ Git 克隆成功"
+                          cd - >/dev/null
+                          break
+                        else
+                          echo "无法切换到版本 $GIT_VERSION，放弃此镜像"
+                          cd - >/dev/null
+                        fi
+                      fi
+                      rm -rf "$TARGET_DIR"
+                    done
+                    
+                    if [ "$GIT_CLONE_SUCCESS" = true ]; then
+                      touch "$TARGET_DIR/.download"
+                      echo "✓ $pkg 通过 Git 手动克隆成功"
+                      continue
+                    else
+                      echo "::error::✗ $pkg Git 克隆失败"
+                    fi
+                  else
+                    echo "无法提取 Git 信息，跳过手动克隆"
+                  fi
+                else
+                  # 非 Git 包，尝试使用镜像源
+                  echo "尝试使用南京镜像源..."
+                  export DOWNLOAD_MIRROR="https://mirror.nju.edu.cn/immortalwrt"
+                  make package/$pkg/download -j1 V=s && echo "✓ $pkg 通过镜像下载成功" || echo "::error::✗ $pkg 下载失败（镜像亦失败）"
+                  unset DOWNLOAD_MIRROR
+                fi
+              else
+                echo "未找到 $pkg 的 Makefile，跳过"
+              fi
+            else
+              echo "::error::✗ 非关键包 $pkg 下载失败，跳过（可能不影响编译）"
+            fi
+          done
+          
+          echo "::endgroup::"
+
+      # ==================== 编译固件（测试模式/正式模式） ====================
+      - name: Compile Firmware (测试模式或正式编译)
+        id: compile
+        run: |
+          cd ./wrt/
+          
+          if [[ "$WRT_TEST" == "true" ]]; then
+            echo "============================"
+            echo "测试模式：只进行配置检查和单包编译"
+            echo "============================"
+            
+            mkdir -p ./test_output/
+            
+            # 1. 配置语法检查（改进版）
+            echo "[1/4] 配置语法检查..."
+            make defconfig -j1 2>&1 | tee config_check.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
+              echo "✓ 配置语法检查通过"
+            else
+              echo "::error::配置文件生成失败！"
+              cp config_check.log ./test_output/
+            fi
+            
+            # 2. 检查关键包是否存在（使用通用 find）
+            echo "[2/4] 检查关键包..."
+            for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall2; do
+              if find . -path "*/$pkg" -type d -print -quit | grep -q .; then
+                echo "✓ $pkg 包存在"
+              else
+                echo "::error::✗ $pkg 包不存在"
+              fi
+            done
+            
+            # 3. 单包编译测试（仅在启用时执行）
+            echo "[3/4] 单包编译测试..."
+            if [[ "$WRT_SINGLE_TEST" == "true" ]]; then
+              # 编译 OAF
+              echo "编译 OAF..."
+              make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ OAF 编译成功"
+                find bin/ -name "*oaf*.ipk" -o -name "*oaf*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ OAF 编译失败"
+                tail -100 compile_oaf.log > ./test_output/oaf_error.log
+              fi
+              
+              # 编译 open-app-filter
+              echo "编译 open-app-filter..."
+              make package/open-app-filter/compile -j1 V=s 2>&1 | tee compile_oaf_daemon.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ open-app-filter 编译成功"
+                find bin/ -name "*open-app-filter*.ipk" -o -name "*open-app-filter*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ open-app-filter 编译失败"
+                tail -100 compile_oaf_daemon.log > ./test_output/open-app-filter_error.log
+              fi
+              
+              # 编译 luci-app-oaf
+              echo "编译 luci-app-oaf..."
+              make package/luci-app-oaf/compile -j1 V=s 2>&1 | tee compile_luci_oaf.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ luci-app-oaf 编译成功"
+                find bin/ -name "*luci-app-oaf*.ipk" -o -name "*luci-app-oaf*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ luci-app-oaf 编译失败"
+                tail -100 compile_luci_oaf.log > ./test_output/luci-app-oaf_error.log
+              fi
+              
+              # 编译 PassWall2
+              echo "编译 PassWall2..."
+              make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ PassWall2 编译成功"
+                find bin/ -name "*passwall2*.ipk" -o -name "*passwall2*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ PassWall2 编译失败"
+                tail -100 compile_pw.log > ./test_output/passwall2_error.log
+              fi
+            else
+              echo "跳过单包编译（未启用 WRT_SINGLE_TEST）"
+            fi
+            
+            # 复制配置文件（始终保留）
+            cp .config ./test_output/Config-Test.txt
+            
+            echo "[4/4] 测试产物列表："
+            ls -lh ./test_output/ || echo "无编译产物"
+            
+            echo "============================"
+            echo "测试模式完成"
+            echo "============================"
+            
+          else
+            echo "开始正式编译固件..."
+            # 正式编译前再次确保下载完整
+            make download -j$(nproc) || make download -j1 V=s
+
+            # 全量编译，允许非核心包错误继续，并保存日志
+            echo "开始全量编译（允许非核心包失败继续）..."
+            make -j$(nproc) -k 2>&1 | tee build.log || true
+
+            # 检查核心包是否在日志中出现错误
+            CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2"
+            CORE_FAILED=0
+            for pkg in $CORE_PACKAGES; do
+              if grep -q "make\[.*\]: \*\*\* \[.*package/$pkg.*\] Error" build.log; then
+                echo "::error::核心包 $pkg 编译失败！"
+                CORE_FAILED=1
+              fi
+            done
+            if [ $CORE_FAILED -eq 1 ]; then
+              exit 1
+            fi
+
+            # 最终检查固件是否生成
+            if [ ! -d "bin/targets" ] || [ -z "$(find bin/targets -name '*.bin' -o -name '*.img' -o -name '*.trx' 2>/dev/null)" ]; then
+              echo "::error::未生成任何固件文件，编译完全失败！"
+              exit 1
+            else
+              echo "固件编译完成，部分非核心包可能失败但已忽略。"
+            fi
+          fi
+
+      # ==================== 上传测试产物（仅测试模式） ====================
+      - name: Upload Test Artifacts to Release
+        # 仅当测试模式、启用了单包编译、且是手动触发时，创建 Release
+        if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true' && github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: test-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          name: 测试编译产物 ${{env.WRT_CONFIG}} (${{env.WRT_DATE}})
+          body: |
+            这是测试模式编译的单包 APK/IPK 文件。
+            包含以下组件：
+            - OAF
+            - open-app-filter
+            - luci-app-oaf
+            - luci-app-passwall2
+            - 相关依赖（如有）
+            
+            配置文件：Config-Test.txt
+            错误日志见附件。
+            
+            **注意**：此 Release 仅用于测试，非正式固件。
+          files: |
+            ./wrt/test_output/*
+          prerelease: true
+          draft: false
+          fail_on_unmatched_files: false
+
+      - name: Upload Test Artifacts (Fallback)
+        # 测试模式下，如果未启用单包编译或非手动触发，则上传 Artifacts
+        if: env.WRT_TEST == 'true' && (env.WRT_SINGLE_TEST != 'true' || github.event_name != 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-packages-${{env.WRT_DATE}}
+          path: |
+            ./wrt/test_output/*
+            ./wrt/bin/packages/*/base/*oaf*
+            ./wrt/bin/packages/*/base/*passwall*
+            ./wrt/config_check.log
+            ./wrt/compile_*.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Machine Information
+        if: always()
+        run: |
+          cd ./wrt/
+          echo "======================="
+          lscpu | grep -E "name|Core|Thread" || true
+          echo "======================="
+          df -h
+          echo "======================="
+          du -h --max-depth=1 2>/dev/null || true
+          echo "======================="
+
+      - name: Summary Report
+        if: env.WRT_TEST == 'true' && always()
+        run: |
+          echo "::group::测试模式汇总报告"
+          echo "================================"
+          echo "🔍 测试模式检查结果汇总"
+          echo "================================"
+          
+          if [ -f "./wrt/test_output/Config-Test.txt" ]; then
+            echo "✓ 配置文件已生成"
+          fi
+          
+          if ls ./wrt/test_output/*.ipk ./wrt/test_output/*.apk 1> /dev/null 2>&1; then
+            echo "✓ 以下APK/IPK包已生成："
+            ls -1 ./wrt/test_output/*.ipk ./wrt/test_output/*.apk 2>/dev/null | while read f; do
+              echo "  - $(basename $f)"
+            done
+          else
+            echo "⚠️ 未找到编译生成的APK/IPK文件"
+          fi
+          
+          echo "================================"
+          echo "📥 如需下载，请查看 Artifacts 或 Releases"
+          echo "================================"
+          echo "::endgroup::"
+
+      - name: Package Firmware
+        if: env.WRT_TEST != 'true'
+        run: |
+          cd ./wrt/ && mkdir ./upload/
+          cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
+
+          if [[ $WRT_TEST != 'true' ]]; then
+            echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
+            echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
+
+            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
+
+            for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
+              EXT=$(basename $FILE | cut -d '.' -f 2-)
+              NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
+              NEW_FILE="$WRT_INFO"-"$WRT_BRANCH"-"$WRT_WIFI"-"$NAME"-"$WRT_DATE"."$EXT"
+              mv -f $FILE ./upload/$NEW_FILE
+            done
+
+            find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
+            make clean -j$(nproc)
+          fi
+
+      - name: Release Firmware
+        if: env.WRT_TEST != 'true'
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          files: ./wrt/upload/*.*
+          body: |
+            这是个平台固件包，内含多个设备！
+            请注意选择你需要的设备固件！
+            不要问，刷就完事了！
+
+            全系带开源硬件加速，别问了！
+
+            源码：${{env.WRT_REPO}}
+            分支：${{env.WRT_BRANCH}}
+            提交：${{env.WRT_HASH}}
+
+            配置：${{env.WRT_CONFIG}}
+            平台：${{env.WRT_TARGET}}
+
+            登录地址：${{env.WRT_IP}}
+            登录密码：${{env.WRT_PW}}
+
+            WIFI名称：${{env.WRT_SSID}}
+            WIFI密码：${{env.WRT_WORD}}
+
+            内核版本：${{env.WRT_KVER}}
+            插件列表：${{env.WRT_LIST}}
