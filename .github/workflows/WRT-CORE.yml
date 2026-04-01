@@ -416,28 +416,22 @@ jobs:
             # 正式编译前再次确保下载完整
             make download -j$(nproc) || make download -j1 V=s
 
-            # 定义核心包列表（用户必须编译成功的包）
-            CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2"
+            # 全量编译，允许非核心包错误继续，并保存日志
+            echo "开始全量编译（允许非核心包失败继续）..."
+            make -j$(nproc) -k 2>&1 | tee build.log || true
 
-            # 第一步：编译核心包，失败则立即终止
-            echo "首先编译核心包：$CORE_PACKAGES"
+            # 检查核心包是否在日志中出现错误
+            CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2"
             CORE_FAILED=0
             for pkg in $CORE_PACKAGES; do
-              echo "编译核心包: $pkg"
-              if ! make package/$pkg/compile -j1 V=s; then
-                echo "::error::核心包 $pkg 编译失败，中止编译！"
+              if grep -q "make\[.*\]: \*\*\* \[.*package/$pkg.*\] Error" build.log; then
+                echo "::error::核心包 $pkg 编译失败！"
                 CORE_FAILED=1
-                break
               fi
             done
-
             if [ $CORE_FAILED -eq 1 ]; then
               exit 1
             fi
-
-            # 第二步：编译剩余所有包（允许失败继续）
-            echo "核心包编译成功，继续编译剩余包（允许失败继续）..."
-            make -j$(nproc) -k || make -j1 V=s -k
 
             # 最终检查固件是否生成
             if [ ! -d "bin/targets" ] || [ -z "$(find bin/targets -name '*.bin' -o -name '*.img' -o -name '*.trx' 2>/dev/null)" ]; then
