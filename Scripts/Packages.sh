@@ -103,19 +103,17 @@ UPDATE_VERSION "sing-box"
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"
 
-# 拉取 passwall 依赖包（如果需要最新版，可保留；否则可注释）
+# 拉取 passwall 依赖包（使用最新版，可选）
 UPDATE_PACKAGE "passwall-packages" "Openwrt-Passwall/openwrt-passwall-packages" "main" "pkg"
-# 拉取 luci-app-passwall2（注意包名是 luci-app-passwall2）
+
+# 拉取 luci-app-passwall2
 UPDATE_PACKAGE "luci-app-passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 
-# 拉取 OpenAppFilter（包含 oaf 和 luci-app-appfilter）
+# 拉取 OpenAppFilter（三种组件），并重命名 luci-app-appfilter 为 luci-app-oaf
 UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "open-app-filter luci-app-appfilter oaf"
-# 克隆仓库
-git clone --depth=1 --single-branch --branch master "https://github.com/destan19/OpenAppFilter.git"
-# 复制 oaf 和 luci-app-appfilter，并将后者重命名为 luci-app-oaf
-cp -rf OpenAppFilter/oaf ./
-cp -rf OpenAppFilter/luci-app-appfilter ./luci-app-oaf
-rm -rf OpenAppFilter
+if [ -d "./luci-app-appfilter" ]; then
+    mv -f ./luci-app-appfilter ./luci-app-oaf
+fi
 
 UPDATE_PACKAGE "homeproxy" "VIKINGYFY/homeproxy" "main"
 UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "luci-app-timewol luci-app-wolplus"
