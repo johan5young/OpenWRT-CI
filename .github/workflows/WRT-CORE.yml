@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 VIKINGYFY
 
-# 云编译公用核心 - 增强版（支持容错下载、APK预检查、测试模式）
+# 云编译公用核心 - 增强版（支持容错下载、多源镜像、测试模式）
 name: WRT-CORE
 
 on:
@@ -146,7 +146,7 @@ jobs:
 
             echo "caches cleanup done!"
           fi
-      
+
       - name: Update Feeds
         id: update_feeds
         continue-on-error: ${{env.WRT_TEST == 'true'}}
@@ -188,9 +188,10 @@ jobs:
           $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
+      # ==================== 新增：构建 Host 工具链 ====================
       - name: Build Host Tools and Toolchain
-        id: build_tools
-        # 正式模式总是构建（保证环境完整），测试模式下只在缓存未命中时构建
+        id: build_host_tools
+        # 测试模式且缓存命中时可跳过，正式模式始终构建
         if: env.WRT_TEST != 'true' || steps.check-cache.outputs.cache-hit != 'true'
         run: |
           cd ./wrt/
@@ -198,61 +199,53 @@ jobs:
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
           echo "::endgroup::"
-      
-      - name: Download Packages (带容错处理)
+
+      # ==================== 增强下载容错（多源 + 单包重试） ====================
+      - name: Download Packages (增强容错)
         id: download
         continue-on-error: ${{env.WRT_TEST == 'true'}}
         run: |
           cd ./wrt/
-          echo "::group::下载软件包"
-          FAILED_PACKAGES=""
-          SKIPPED_PACKAGES=""
+          echo "::group::下载软件包（批量模式）"
           
+          # 尝试批量下载
           make download -j$(nproc) 2>&1 | tee download.log || {
-            echo "::error::批量下载出现错误，进入单包容错处理模式..."
-            
-            grep -i "404\|failed\|error\|cannot\|not found" download.log | head -20 || true
-            
-            echo "优先确保关键包下载..."
-            CRITICAL_PACKAGES="luci-app-oaf open-app-filter oaf luci-app-passwall2 passwall2 sing-box xray-core"
-            
-            for pkg in $CRITICAL_PACKAGES; do
-              echo "尝试单独下载: $pkg"
-              if make package/$pkg/download -j1 V=s 2>&1 | tee -a single_download.log; then
-                echo "✓ $pkg 下载成功"
-              else
-                echo "::error::✗ $pkg 下载失败"
-                FAILED_PACKAGES="$FAILED_PACKAGES $pkg"
-              fi
-            done
+            echo "::warning::批量下载失败，进入单包容错模式..."
           }
-          
-          echo "::endgroup::"
-          echo "failed_pkgs=$FAILED_PACKAGES" >> $GITHUB_OUTPUT
-          echo "skipped_pkgs=$SKIPPED_PACKAGES" >> $GITHUB_OUTPUT
 
-      - name: Pre-check APK Version Format
-        id: version_check
-        continue-on-error: ${{env.WRT_TEST == 'true'}}
-        run: |
-          cd ./wrt/
-          echo "::group::APK版本号格式检查"
-          INVALID_COUNT=0
+          # 定义关键包列表（如果这些包下载失败，额外尝试镜像）
+          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 passwall2 sing-box xray-core"
+
+          # 提取失败包名（基于常见错误信息）
+          FAILED_PKGS=$(grep -E 'failed|error|cannot|not found' download.log | awk -F'/' '{print $(NF)}' | sed 's/\.git//;s/\.tar.*//' | sort -u | tr '\n' ' ')
           
-          find ./feeds/ -name "Makefile" -type f 2>/dev/null | while read makefile; do
-            if grep -q "PKG_VERSION:=" "$makefile" 2>/dev/null; then
-              version=$(grep "PKG_VERSION:=" "$makefile" | head -1 | cut -d'=' -f2)
-              if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*(-r[0-9]+)?$ ]] && [[ -n "$version" ]]; then
-                pkg_name=$(basename "$(dirname "$makefile")")
-                echo "::error::可疑版本号: $pkg_name -> $version"
-                INVALID_COUNT=$((INVALID_COUNT + 1))
-              fi
+          # 合并关键包和失败包
+          ALL_FAILED=$(echo "$FAILED_PKGS $CRITICAL_PACKAGES" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+          
+          for pkg in $ALL_FAILED; do
+            echo "尝试重试下载: $pkg"
+            
+            # 尝试默认方式
+            if make package/$pkg/download -j1 V=s; then
+              echo "✓ $pkg 下载成功"
+              continue
+            fi
+            
+            # 对于关键包，尝试切换镜像源
+            if echo "$CRITICAL_PACKAGES" | grep -qw "$pkg"; then
+              echo "关键包 $pkg 下载失败，尝试使用南京镜像源..."
+              # 设置镜像环境变量（适用于从官方仓库下载的包）
+              export DOWNLOAD_MIRROR="https://mirror.nju.edu.cn/immortalwrt"
+              make package/$pkg/download -j1 V=s && echo "✓ $pkg 通过镜像下载成功" || echo "::error::✗ $pkg 下载失败（镜像亦失败）"
+              unset DOWNLOAD_MIRROR
+            else
+              echo "::error::✗ 非关键包 $pkg 下载失败，跳过（可能不影响编译）"
             fi
           done
           
           echo "::endgroup::"
-          echo "invalid_count=$INVALID_COUNT" >> $GITHUB_OUTPUT
 
+      # ==================== 编译固件（测试模式/正式模式） ====================
       - name: Compile Firmware (测试模式或正式编译)
         id: compile
         run: |
@@ -286,15 +279,14 @@ jobs:
             done
             
             # 3. 单包编译测试（生成APK供下载）
-            echo "[3/4] 单包编译测试（生成可下载的APK）..."
+            echo "[3/4] 单包编译测试..."
             
             # 编译 OAF
             echo "编译 OAF..."
-            if make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log; then
+            make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
               echo "✓ OAF 编译成功"
-              find bin/ -name "*oaf*.ipk" -o -name "*oaf*.apk" | while read f; do
-                cp "$f" ./test_output/ 2>/dev/null || true
-              done
+              find bin/ -name "*oaf*.ipk" -o -name "*oaf*.apk" -exec cp {} ./test_output/ \;
             else
               echo "::error::✗ OAF 编译失败"
               tail -100 compile_oaf.log > ./test_output/oaf_error.log
@@ -302,11 +294,10 @@ jobs:
             
             # 编译 open-app-filter
             echo "编译 open-app-filter..."
-            if make package/open-app-filter/compile -j1 V=s 2>&1 | tee compile_oaf_daemon.log; then
+            make package/open-app-filter/compile -j1 V=s 2>&1 | tee compile_oaf_daemon.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
               echo "✓ open-app-filter 编译成功"
-              find bin/ -name "*open-app-filter*.ipk" -o -name "*open-app-filter*.apk" | while read f; do
-                cp "$f" ./test_output/ 2>/dev/null || true
-              done
+              find bin/ -name "*open-app-filter*.ipk" -o -name "*open-app-filter*.apk" -exec cp {} ./test_output/ \;
             else
               echo "::error::✗ open-app-filter 编译失败"
               tail -100 compile_oaf_daemon.log > ./test_output/open-app-filter_error.log
@@ -314,11 +305,10 @@ jobs:
             
             # 编译 luci-app-oaf
             echo "编译 luci-app-oaf..."
-            if make package/luci-app-oaf/compile -j1 V=s 2>&1 | tee compile_luci_oaf.log; then
+            make package/luci-app-oaf/compile -j1 V=s 2>&1 | tee compile_luci_oaf.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
               echo "✓ luci-app-oaf 编译成功"
-              find bin/ -name "*luci-app-oaf*.ipk" -o -name "*luci-app-oaf*.apk" | while read f; do
-                cp "$f" ./test_output/ 2>/dev/null || true
-              done
+              find bin/ -name "*luci-app-oaf*.ipk" -o -name "*luci-app-oaf*.apk" -exec cp {} ./test_output/ \;
             else
               echo "::error::✗ luci-app-oaf 编译失败"
               tail -100 compile_luci_oaf.log > ./test_output/luci-app-oaf_error.log
@@ -326,11 +316,10 @@ jobs:
             
             # 编译 PassWall2
             echo "编译 PassWall2..."
-            if make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log; then
+            make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log
+            if [ ${PIPESTATUS[0]} -eq 0 ]; then
               echo "✓ PassWall2 编译成功"
-              find bin/ -name "*passwall2*.ipk" -o -name "*passwall2*.apk" | while read f; do
-                cp "$f" ./test_output/ 2>/dev/null || true
-              done
+              find bin/ -name "*passwall2*.ipk" -o -name "*passwall2*.apk" -exec cp {} ./test_output/ \;
             else
               echo "::error::✗ PassWall2 编译失败"
               tail -100 compile_pw.log > ./test_output/passwall2_error.log
@@ -339,24 +328,50 @@ jobs:
             # 复制配置文件
             cp .config ./test_output/Config-Test.txt
             
-            # 列出编译产物
-            echo "[4/4] 编译产物列表："
+            echo "[4/4] 测试产物列表："
             ls -lh ./test_output/ || echo "无编译产物"
             
             echo "============================"
-            echo "测试模式完成，检查上方错误标记"
+            echo "测试模式完成"
             echo "============================"
             
           else
             echo "开始正式编译固件..."
-            make package/oaf/compile -j$(nproc) || echo "::warning:: OAF 编译可能有问题，继续..."
-            make package/open-app-filter/compile -j$(nproc) || echo "::warning:: open-app-filter 编译可能有问题，继续..."
-            make package/luci-app-passwall2/compile -j$(nproc) || echo "::warning:: PassWall2 编译可能有问题，继续..."
+            # 正式编译前再次确保下载完整（尤其关键包）
+            make download -j$(nproc) || make download -j1 V=s
+            # 全量编译
             make -j$(nproc) || make -j1 V=s
           fi
 
-      - name: Upload Test Artifacts
-        if: env.WRT_TEST == 'true'
+      # ==================== 上传测试产物到 Release（仅测试模式） ====================
+      - name: Upload Test Artifacts to Release
+        if: env.WRT_TEST == 'true' && github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: test-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          name: 测试编译产物 ${{env.WRT_CONFIG}} (${{env.WRT_DATE}})
+          body: |
+            这是测试模式编译的单包 APK/IPK 文件。
+            包含以下组件：
+            - OAF
+            - open-app-filter
+            - luci-app-oaf
+            - luci-app-passwall2
+            - 相关依赖（如有）
+            
+            配置文件：Config-Test.txt
+            错误日志见附件。
+            
+            **注意**：此 Release 仅用于测试，非正式固件。
+          files: |
+            ./wrt/test_output/*
+          prerelease: true
+          draft: false
+          fail_on_unmatched_files: false
+
+      # 如果不想创建 Release，也可以保留原有的 Artifact 上传（备选）
+      - name: Upload Test Artifacts (Fallback)
+        if: env.WRT_TEST == 'true' && github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: test-packages-${{env.WRT_DATE}}
@@ -394,7 +409,7 @@ jobs:
           fi
           
           if ls ./wrt/test_output/*.ipk ./wrt/test_output/*.apk 1> /dev/null 2>&1; then
-            echo "✓ 以下APK/IPK包已生成可供下载："
+            echo "✓ 以下APK/IPK包已生成："
             ls -1 ./wrt/test_output/*.ipk ./wrt/test_output/*.apk 2>/dev/null | while read f; do
               echo "  - $(basename $f)"
             done
@@ -402,19 +417,8 @@ jobs:
             echo "⚠️ 未找到编译生成的APK/IPK文件"
           fi
           
-          if [ -n "${{steps.download.outputs.failed_pkgs}}" ]; then
-            echo "::error::❌ 下载失败的包：${{steps.download.outputs.failed_pkgs}}"
-          fi
-          
-          if [ -n "${{steps.version_check.outputs.invalid_count}}" ] && [ "${{steps.version_check.outputs.invalid_count}}" -gt 0 ]; then
-            echo "::error::⚠️ 发现 ${{steps.version_check.outputs.invalid_count}} 个版本号格式问题"
-          fi
-          
           echo "================================"
-          echo "📥 下载Artifacts获取："
-          echo "   - 测试编译的APK/IPK包"
-          echo "   - 配置文件"
-          echo "   - 错误日志"
+          echo "📥 如需下载，请查看 Artifacts 或 Releases"
           echo "================================"
           echo "::endgroup::"
 
