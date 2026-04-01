@@ -319,7 +319,7 @@ jobs:
           echo "::endgroup::"
 
       # ==================== 编译固件（测试模式/正式模式） ====================
-            - name: Compile Firmware (测试模式或正式编译)
+      - name: Compile Firmware (测试模式或正式编译)
         id: compile
         run: |
           cd ./wrt/
