@@ -204,7 +204,7 @@ jobs:
           make toolchain/install -j$(nproc)
           echo "::endgroup::"
 
-      # ==================== 增强下载容错（多源 + 单包重试 + Git 手动克隆） ====================
+      # ==================== 增强下载容错（优化版，避免重复循环） ====================
       - name: Download Packages (增强容错)
         id: download
         continue-on-error: ${{env.WRT_TEST == 'true'}}
@@ -217,44 +217,45 @@ jobs:
             echo "::warning::批量下载失败，进入单包容错模式..."
           }
 
-          # 定义关键包列表（与 Packages.sh 中的包名一致）
+          # 定义关键包列表
           CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 sing-box xray-core"
 
-          # 提取失败包名（基于常见错误信息）
-          FAILED_PKGS=$(grep -E 'failed|error|cannot|not found' download.log | awk -F'/' '{print $(NF)}' | sed 's/\.git//;s/\.tar.*//' | sort -u | tr '\n' ' ')
+          # 提取失败包名（仅当下载失败时）
+          FAILED_PKGS=""
+          if grep -q -E 'failed|error|cannot|not found' download.log; then
+              FAILED_PKGS=$(grep -E 'failed|error|cannot|not found' download.log | awk -F'/' '{print $(NF)}' | sed 's/\.git//;s/\.tar.*//' | sort -u | tr '\n' ' ')
+          fi
           
-          # 合并关键包和失败包
-          ALL_FAILED=$(echo "$FAILED_PKGS $CRITICAL_PACKAGES" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+          # 检查关键包是否已在 dl/ 中存在，若不存在则加入重试列表
+          MISSING_CRITICAL=""
+          for pkg in $CRITICAL_PACKAGES; do
+              if ! ls dl/${pkg}* 1>/dev/null 2>&1; then
+                  MISSING_CRITICAL="$MISSING_CRITICAL $pkg"
+              fi
+          done
           
-          # 记录已经成功下载的包，避免重复尝试
-          SUCCESSFUL=""
+          # 合并失败包和缺失的关键包
+          ALL_FAILED=$(echo "$FAILED_PKGS $MISSING_CRITICAL" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+          
           for pkg in $ALL_FAILED; do
-            # 如果已经成功过，跳过
-            if echo "$SUCCESSFUL" | grep -qw "$pkg"; then
-              echo "已成功下载过 $pkg，跳过重复尝试"
-              continue
-            fi
-            
             echo "尝试重试下载: $pkg"
             
             # 尝试默认方式
             if make package/$pkg/download -j1 V=s; then
               echo "✓ $pkg 下载成功"
-              SUCCESSFUL="$SUCCESSFUL $pkg"
               continue
             fi
             
-            # 对于关键包，尝试更高级的恢复手段
+            # 对于关键包，尝试更高级的恢复手段（镜像或手动克隆）
             if echo "$CRITICAL_PACKAGES" | grep -qw "$pkg"; then
               echo "关键包 $pkg 下载失败，尝试高级恢复..."
               
-              # 查找包的 Makefile（支持 package/ 和 feeds/ 路径）
+              # 查找包的 Makefile
               MAKEFILE=$(find . -path "*/$pkg/Makefile" -type f -print -quit)
               if [ -f "$MAKEFILE" ]; then
-                # 提取 PKG_SOURCE_PROTO 判断是否为 Git 包
                 PROTO=$(grep -m1 'PKG_SOURCE_PROTO:=' "$MAKEFILE" | cut -d'=' -f2)
                 if [ "$PROTO" = "git" ]; then
-                  # 提取 Git 仓库 URL 和版本
+                  # Git 包，尝试手动克隆
                   GIT_URL=$(grep -m1 'PKG_SOURCE_URL:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
                   GIT_VERSION=$(grep -m1 'PKG_SOURCE_VERSION:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
                   PKG_NAME=$(grep -m1 'PKG_NAME:=' "$MAKEFILE" | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
@@ -264,11 +265,9 @@ jobs:
                     echo "  URL: $GIT_URL"
                     echo "  VERSION: $GIT_VERSION"
                     
-                    # 目标目录: dl/$PKG_NAME-$GIT_VERSION
                     TARGET_DIR="dl/${PKG_NAME}-${GIT_VERSION}"
                     mkdir -p "$TARGET_DIR"
                     
-                    # 尝试从 GitHub 官方及镜像克隆
                     GIT_CLONE_SUCCESS=false
                     for MIRROR in "" "https://ghproxy.com/" "https://github.moeyy.xyz/"; do
                       if [ -z "$MIRROR" ]; then
@@ -295,7 +294,6 @@ jobs:
                     if [ "$GIT_CLONE_SUCCESS" = true ]; then
                       touch "$TARGET_DIR/.download"
                       echo "✓ $pkg 通过 Git 手动克隆成功"
-                      SUCCESSFUL="$SUCCESSFUL $pkg"
                       continue
                     else
                       echo "::error::✗ $pkg Git 克隆失败"
@@ -304,51 +302,14 @@ jobs:
                     echo "无法提取 Git 信息，跳过手动克隆"
                   fi
                 else
-                  # 非 Git 包，尝试使用镜像源（仅适用于普通下载）
+                  # 非 Git 包，尝试使用镜像源
                   echo "尝试使用南京镜像源..."
                   export DOWNLOAD_MIRROR="https://mirror.nju.edu.cn/immortalwrt"
-                  if make package/$pkg/download -j1 V=s; then
-                    echo "✓ $pkg 通过镜像下载成功"
-                    SUCCESSFUL="$SUCCESSFUL $pkg"
-                  else
-                    echo "::error::✗ $pkg 下载失败（镜像亦失败）"
-                  fi
+                  make package/$pkg/download -j1 V=s && echo "✓ $pkg 通过镜像下载成功" || echo "::error::✗ $pkg 下载失败（镜像亦失败）"
                   unset DOWNLOAD_MIRROR
                 fi
               else
-                # ========== 找不到 Makefile 时的直接克隆 ==========
-                echo "未找到 $pkg 的 Makefile，尝试直接克隆到 package/ 目录..."
-                case "$pkg" in
-                  luci-app-passwall2)
-                    GIT_URL="https://github.com/Openwrt-Passwall/openwrt-passwall2.git"
-                    TARGET_DIR="package/luci-app-passwall2"
-                    rm -rf "$TARGET_DIR"
-                    git clone --depth 1 "$GIT_URL" temp_repo
-                    cp -rf temp_repo/luci-app-passwall2 "$TARGET_DIR"
-                    rm -rf temp_repo
-                    if [ -d "$TARGET_DIR" ]; then
-                      echo "✓ $pkg 直接克隆成功"
-                      SUCCESSFUL="$SUCCESSFUL $pkg"
-                    else
-                      echo "::error::✗ $pkg 直接克隆失败"
-                    fi
-                    ;;
-                  oaf|open-app-filter|luci-app-oaf)
-                    GIT_URL="https://github.com/destan19/OpenAppFilter.git"
-                    TARGET_DIR="package/OpenAppFilter"
-                    rm -rf "$TARGET_DIR"
-                    git clone --depth 1 "$GIT_URL" "$TARGET_DIR"
-                    if [ -d "$TARGET_DIR" ]; then
-                      echo "✓ $pkg 直接克隆成功"
-                      SUCCESSFUL="$SUCCESSFUL $pkg"
-                    else
-                      echo "::error::✗ $pkg 直接克隆失败"
-                    fi
-                    ;;
-                  *)
-                    echo "未知包 $pkg，跳过直接克隆"
-                    ;;
-                esac
+                echo "未找到 $pkg 的 Makefile，跳过"
               fi
             else
               echo "::error::✗ 非关键包 $pkg 下载失败，跳过（可能不影响编译）"
