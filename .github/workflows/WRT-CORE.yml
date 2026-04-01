@@ -43,6 +43,9 @@ on:
       WRT_TEST:
         required: false
         type: string
+      WRT_SINGLE_TEST:            # 新增：测试模式下是否进行单包编译和host工具链构建
+        required: false
+        type: string
 
 env:
   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
@@ -58,6 +61,7 @@ env:
   WRT_SOURCE: ${{inputs.WRT_SOURCE}}
   WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
   WRT_TEST: ${{inputs.WRT_TEST}}
+  WRT_SINGLE_TEST: ${{inputs.WRT_SINGLE_TEST}}    # 新增
 
 jobs:
   core:
@@ -188,11 +192,11 @@ jobs:
           $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      # ==================== 新增：构建 Host 工具链 ====================
+      # ==================== 构建 Host 工具链（仅在正式模式或测试模式且启用单包测试时执行） ====================
       - name: Build Host Tools and Toolchain
         id: build_host_tools
-        # 测试模式且缓存命中时可跳过，正式模式始终构建
-        if: env.WRT_TEST != 'true' || steps.check-cache.outputs.cache-hit != 'true'
+        # 正式模式（WRT_TEST != 'true'）总是构建；测试模式（WRT_TEST == 'true'）下仅当 WRT_SINGLE_TEST == 'true' 时构建
+        if: env.WRT_TEST != 'true' || env.WRT_SINGLE_TEST == 'true'
         run: |
           cd ./wrt/
           echo "::group::Building host tools and toolchain"
@@ -278,54 +282,57 @@ jobs:
               fi
             done
             
-            # 3. 单包编译测试（生成APK供下载）
+            # 3. 单包编译测试（仅在启用时执行）
             echo "[3/4] 单包编译测试..."
-            
-            # 编译 OAF
-            echo "编译 OAF..."
-            make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log
-            if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "✓ OAF 编译成功"
-              find bin/ -name "*oaf*.ipk" -o -name "*oaf*.apk" -exec cp {} ./test_output/ \;
+            if [[ "$WRT_SINGLE_TEST" == "true" ]]; then
+              # 编译 OAF
+              echo "编译 OAF..."
+              make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ OAF 编译成功"
+                find bin/ -name "*oaf*.ipk" -o -name "*oaf*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ OAF 编译失败"
+                tail -100 compile_oaf.log > ./test_output/oaf_error.log
+              fi
+              
+              # 编译 open-app-filter
+              echo "编译 open-app-filter..."
+              make package/open-app-filter/compile -j1 V=s 2>&1 | tee compile_oaf_daemon.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ open-app-filter 编译成功"
+                find bin/ -name "*open-app-filter*.ipk" -o -name "*open-app-filter*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ open-app-filter 编译失败"
+                tail -100 compile_oaf_daemon.log > ./test_output/open-app-filter_error.log
+              fi
+              
+              # 编译 luci-app-oaf
+              echo "编译 luci-app-oaf..."
+              make package/luci-app-oaf/compile -j1 V=s 2>&1 | tee compile_luci_oaf.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ luci-app-oaf 编译成功"
+                find bin/ -name "*luci-app-oaf*.ipk" -o -name "*luci-app-oaf*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ luci-app-oaf 编译失败"
+                tail -100 compile_luci_oaf.log > ./test_output/luci-app-oaf_error.log
+              fi
+              
+              # 编译 PassWall2
+              echo "编译 PassWall2..."
+              make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✓ PassWall2 编译成功"
+                find bin/ -name "*passwall2*.ipk" -o -name "*passwall2*.apk" -exec cp {} ./test_output/ \;
+              else
+                echo "::error::✗ PassWall2 编译失败"
+                tail -100 compile_pw.log > ./test_output/passwall2_error.log
+              fi
             else
-              echo "::error::✗ OAF 编译失败"
-              tail -100 compile_oaf.log > ./test_output/oaf_error.log
+              echo "跳过单包编译（未启用 WRT_SINGLE_TEST）"
             fi
             
-            # 编译 open-app-filter
-            echo "编译 open-app-filter..."
-            make package/open-app-filter/compile -j1 V=s 2>&1 | tee compile_oaf_daemon.log
-            if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "✓ open-app-filter 编译成功"
-              find bin/ -name "*open-app-filter*.ipk" -o -name "*open-app-filter*.apk" -exec cp {} ./test_output/ \;
-            else
-              echo "::error::✗ open-app-filter 编译失败"
-              tail -100 compile_oaf_daemon.log > ./test_output/open-app-filter_error.log
-            fi
-            
-            # 编译 luci-app-oaf
-            echo "编译 luci-app-oaf..."
-            make package/luci-app-oaf/compile -j1 V=s 2>&1 | tee compile_luci_oaf.log
-            if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "✓ luci-app-oaf 编译成功"
-              find bin/ -name "*luci-app-oaf*.ipk" -o -name "*luci-app-oaf*.apk" -exec cp {} ./test_output/ \;
-            else
-              echo "::error::✗ luci-app-oaf 编译失败"
-              tail -100 compile_luci_oaf.log > ./test_output/luci-app-oaf_error.log
-            fi
-            
-            # 编译 PassWall2
-            echo "编译 PassWall2..."
-            make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log
-            if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "✓ PassWall2 编译成功"
-              find bin/ -name "*passwall2*.ipk" -o -name "*passwall2*.apk" -exec cp {} ./test_output/ \;
-            else
-              echo "::error::✗ PassWall2 编译失败"
-              tail -100 compile_pw.log > ./test_output/passwall2_error.log
-            fi
-            
-            # 复制配置文件
+            # 复制配置文件（始终保留）
             cp .config ./test_output/Config-Test.txt
             
             echo "[4/4] 测试产物列表："
@@ -343,9 +350,10 @@ jobs:
             make -j$(nproc) || make -j1 V=s
           fi
 
-      # ==================== 上传测试产物到 Release（仅测试模式） ====================
+      # ==================== 上传测试产物（仅测试模式） ====================
       - name: Upload Test Artifacts to Release
-        if: env.WRT_TEST == 'true' && github.event_name == 'workflow_dispatch'
+        # 只有在测试模式且启用了单包编译，且是手动触发时才创建 Release
+        if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true' && github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@master
         with:
           tag_name: test-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
@@ -369,9 +377,9 @@ jobs:
           draft: false
           fail_on_unmatched_files: false
 
-      # 如果不想创建 Release，也可以保留原有的 Artifact 上传（备选）
+      # 如果不想创建 Release，或者单包测试未启用时使用 Artifacts 上传（备选）
       - name: Upload Test Artifacts (Fallback)
-        if: env.WRT_TEST == 'true' && github.event_name != 'workflow_dispatch'
+        if: env.WRT_TEST == 'true' && (env.WRT_SINGLE_TEST != 'true' || github.event_name != 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: test-packages-${{env.WRT_DATE}}
