@@ -204,7 +204,7 @@ jobs:
           make toolchain/install -j$(nproc)
           echo "::endgroup::"
 
-      # ==================== 增强下载容错（多源 + 单包重试） ====================
+      # ==================== 增强下载容错（多源 + 单包重试 + Git 手动克隆） ====================
       - name: Download Packages (增强容错)
         id: download
         continue-on-error: ${{env.WRT_TEST == 'true'}}
@@ -217,7 +217,7 @@ jobs:
             echo "::warning::批量下载失败，进入单包容错模式..."
           }
 
-          # 定义关键包列表（如果这些包下载失败，额外尝试镜像）
+          # 定义关键包列表（如果这些包下载失败，额外尝试镜像和 Git 克隆）
           CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 passwall2 sing-box xray-core"
 
           # 提取失败包名（基于常见错误信息）
@@ -235,13 +235,67 @@ jobs:
               continue
             fi
             
-            # 对于关键包，尝试切换镜像源
+            # 对于关键包，尝试更高级的恢复手段
             if echo "$CRITICAL_PACKAGES" | grep -qw "$pkg"; then
-              echo "关键包 $pkg 下载失败，尝试使用南京镜像源..."
-              # 设置镜像环境变量（适用于从官方仓库下载的包）
-              export DOWNLOAD_MIRROR="https://mirror.nju.edu.cn/immortalwrt"
-              make package/$pkg/download -j1 V=s && echo "✓ $pkg 通过镜像下载成功" || echo "::error::✗ $pkg 下载失败（镜像亦失败）"
-              unset DOWNLOAD_MIRROR
+              echo "关键包 $pkg 下载失败，尝试高级恢复..."
+              
+              # 检查包的 Makefile 是否存在
+              if [ -f "package/$pkg/Makefile" ]; then
+                # 提取 PKG_SOURCE_PROTO 判断是否为 Git 包
+                PROTO=$(grep -m1 'PKG_SOURCE_PROTO:=' package/$pkg/Makefile | cut -d'=' -f2)
+                if [ "$PROTO" = "git" ]; then
+                  # 提取 Git 仓库 URL 和版本
+                  GIT_URL=$(grep -m1 'PKG_SOURCE_URL:=' package/$pkg/Makefile | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  GIT_VERSION=$(grep -m1 'PKG_SOURCE_VERSION:=' package/$pkg/Makefile | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  PKG_NAME=$(grep -m1 'PKG_NAME:=' package/$pkg/Makefile | cut -d'=' -f2 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                  
+                  if [ -n "$GIT_URL" ] && [ -n "$GIT_VERSION" ]; then
+                    echo "检测到 Git 包: $pkg"
+                    echo "  URL: $GIT_URL"
+                    echo "  VERSION: $GIT_VERSION"
+                    
+                    # 目标目录: dl/$PKG_NAME-$GIT_VERSION
+                    TARGET_DIR="dl/${PKG_NAME}-${GIT_VERSION}"
+                    mkdir -p "$TARGET_DIR"
+                    
+                    # 尝试使用 GitHub 镜像克隆
+                    GIT_CLONE_SUCCESS=false
+                    for MIRROR in "" "https://ghproxy.com/" "https://github.moeyy.xyz/"; do
+                      if [ -z "$MIRROR" ]; then
+                        FULL_URL="$GIT_URL"
+                      else
+                        FULL_URL="${MIRROR}${GIT_URL#https://}"
+                      fi
+                      echo "尝试从 $FULL_URL 克隆..."
+                      if git clone --depth 1 --branch "$GIT_VERSION" "$FULL_URL" "$TARGET_DIR" 2>/dev/null; then
+                        GIT_CLONE_SUCCESS=true
+                        echo "✓ Git 克隆成功"
+                        break
+                      fi
+                      rm -rf "$TARGET_DIR"
+                    done
+                    
+                    if [ "$GIT_CLONE_SUCCESS" = true ]; then
+                      # 创建 dl 目录下的 .download 标记文件（让 make 认为下载完成）
+                      touch "$TARGET_DIR/.download"
+                      echo "✓ $pkg 通过 Git 手动克隆成功"
+                      continue
+                    else
+                      echo "::error::✗ $pkg Git 克隆失败"
+                    fi
+                  else
+                    echo "无法提取 Git 信息，跳过手动克隆"
+                  fi
+                else
+                  # 非 Git 包，尝试使用镜像源（仅适用于普通下载）
+                  echo "尝试使用南京镜像源..."
+                  export DOWNLOAD_MIRROR="https://mirror.nju.edu.cn/immortalwrt"
+                  make package/$pkg/download -j1 V=s && echo "✓ $pkg 通过镜像下载成功" || echo "::error::✗ $pkg 下载失败（镜像亦失败）"
+                  unset DOWNLOAD_MIRROR
+                fi
+              else
+                echo "未找到 package/$pkg/Makefile，跳过"
+              fi
             else
               echo "::error::✗ 非关键包 $pkg 下载失败，跳过（可能不影响编译）"
             fi
