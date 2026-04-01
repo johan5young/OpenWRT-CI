@@ -89,3 +89,7 @@ echo "CONFIG_PACKAGE_python3-setuptools=y" >> .config
 echo "CONFIG_PACKAGE_python3-codecs=y" >> .config
 echo "CONFIG_PACKAGE_python3-logging=y" >> .config
 echo "CONFIG_PACKAGE_python3-openssl=y" >> .config
+
+echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
+echo "CONFIG_PACKAGE_open-app-filter=y" >> .config
+echo "CONFIG_PACKAGE_oaf=y" >> .config
