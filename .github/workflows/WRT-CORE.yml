@@ -192,11 +192,11 @@ jobs:
           $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      # ==================== 构建 Host 工具链（仅在测试模式且启用单包测试时执行） ====================
+      # ==================== 构建 Host 工具链 ====================
       - name: Build Host Tools and Toolchain
         id: build_host_tools
-        # 正式编译（WRT_TEST != 'true'）不执行；测试模式下仅当 WRT_SINGLE_TEST == 'true' 时执行
-        if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true'
+        # 正式编译时总是构建；测试模式下仅当启用单包测试时构建
+        if: env.WRT_TEST != 'true' || env.WRT_SINGLE_TEST == 'true'
         run: |
           cd ./wrt/
           echo "::group::Building host tools and toolchain"
@@ -316,18 +316,6 @@ jobs:
             fi
           done
           
-          echo "::endgroup::"
-
-      # ==================== 构建 Host 工具链 ====================
-      - name: Build Host Tools and Toolchain
-        id: build_host_tools
-        # 正式编译时总是构建；测试模式下仅当启用单包测试时构建
-        if: env.WRT_TEST != 'true' || env.WRT_SINGLE_TEST == 'true'
-        run: |
-          cd ./wrt/
-          echo "::group::Building host tools and toolchain"
-          make tools/install -j$(nproc)
-          make toolchain/install -j$(nproc)
           echo "::endgroup::"
 
       # ==================== 编译固件（测试模式/正式编译） ====================
