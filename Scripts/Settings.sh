@@ -140,72 +140,98 @@ echo "CONFIG_PACKAGE_ebtables-nft=y" >> .config
 
 
 
-# ---------------------------------------------------------
-# 方案 A 增强版（优化顺序）
-# ---------------------------------------------------------
-echo "开始执行依赖重定向与物理切除..."
+# ============================================================
+# 终极防冲突方案：依赖重定向 + 物理删除 + 二次扫描
+# ============================================================
+echo ""
+echo "正在执行依赖重定向与冲突包物理删除..."
 
-# 1. 先修改依赖（防止后面删除后找不到）
-find package/feeds/ -name "Makefile" -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} +
+# 1. 将所有 Makefile 中对 iptables-zz-legacy 的依赖重定向到 iptables-nft
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} \; 2>/dev/null
+# 同时处理可能直接依赖 iptables (虚拟包) 的情况，强制改为 iptables-nft
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables\b/+iptables-nft/g' {} \; 2>/dev/null
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+ip6tables\b/+ip6tables-nft/g' {} \; 2>/dev/null
+echo "✓ 依赖重定向完成（所有 +iptables 已指向 +iptables-nft）"
 
-# 2. 再删除冲突包（此时依赖已重定向，安全）
-targets=(
+# 2. 定义并物理删除黑名单包（这些包会引入冲突或产生无用警告）
+BLACKLIST=(
     "package/feeds/base/iptables-zz-legacy"
     "package/feeds/packages/fail2ban"
     "package/feeds/packages/onionshare-cli"
     "package/feeds/packages/setools"
     "package/feeds/packages/luci-app-timewol"
 )
-for target in "${targets[@]}"; do
-    [ -d "$target" ] && rm -rf "$target" && echo "已删除: $target"
-done
-
-# 3. 重新生成配置
-make defconfig
-
-
-
-
-# 重新运行 defconfig 使配置生效（同时会解析依赖）
-make defconfig
-
-# ============================================================
-# 2. 冲突回滚检查 + 依赖分析（测试模式下自动定位肇事包）
-# ============================================================
-echo ""
-echo "正在检查依赖冲突回滚..."
-
-FORBIDDEN_PACKAGES="iptables-zz-legacy firewall3 firewall"
-CONFLICT=0
-
-for pkg in $FORBIDDEN_PACKAGES; do
-    if grep -q "^CONFIG_PACKAGE_${pkg}=y" .config; then
-        echo "::error::检测到冲突！包 ${pkg} 被依赖强制重新启用。"
-        CONFLICT=1
-        
-        # 如果是测试模式，自动分析依赖来源
-        if [[ "$WRT_TEST" == "true" ]]; then
-            echo "正在分析依赖来源（测试模式），请稍候..."
-            echo "----------------------------------------"
-            # 使用 make -n 模拟编译，抓取依赖关系（不会实际编译）
-            make -j1 -n V=s package/${pkg}/compile 2>&1 | grep -E "Selected by|needs to be built" | head -20 || true
-            echo "----------------------------------------"
-            echo "上述输出中的 'Selected by' 或 'needs to be built' 即为强制依赖 ${pkg} 的包。"
-            echo "您可以根据这些信息，在 'make menuconfig' 中禁用对应的上游包。"
-        fi
+for target in "${BLACKLIST[@]}"; do
+    if [ -d "$target" ]; then
+        rm -rf "$target"
+        echo "已删除: $target"
     fi
 done
 
-if [ $CONFLICT -eq 1 ]; then
-    echo ""
-    echo "::error::由于依赖冲突，编译无法继续。请根据上述分析结果调整您的软件包选择。"
+# 3. 强制锁定 firewall4 和 iptables-nft 配置（确保 .config 中正确设置）
+sed -i '/CONFIG_PACKAGE_iptables-zz-legacy=y/d' .config
+sed -i '/CONFIG_PACKAGE_firewall3=y/d' .config
+sed -i '/CONFIG_PACKAGE_firewall=y/d' .config
+echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set" >> .config
+echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
+echo "# CONFIG_PACKAGE_firewall is not set" >> .config
+echo "CONFIG_PACKAGE_firewall4=y" >> .config
+echo "CONFIG_PACKAGE_iptables-nft=y" >> .config
+echo "CONFIG_PACKAGE_ip6tables-nft=y" >> .config
+echo "CONFIG_PACKAGE_xtables-nft=y" >> .config
+echo "CONFIG_PACKAGE_ebtables-nft=y" >> .config
+echo "✓ 已强制启用 firewall4 / iptables-nft 并禁用 legacy 包"
+
+# 4. 运行 defconfig 让依赖解析生效
+make defconfig
+
+# 5. 二次冲突扫描：检查 iptables-zz-legacy 是否仍被意外启用
+echo ""
+echo "正在执行二次冲突扫描..."
+if grep -q "^CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
+    echo "::error::警告：iptables-zz-legacy 仍然被依赖强制启用！"
+    echo "正在尝试定位肇事包（测试模式将输出详细依赖链）..."
+    
+    # 如果是测试模式，输出更详细的信息
+    if [[ "$WRT_TEST" == "true" ]]; then
+        echo "----------------------------------------"
+        echo "方法1：通过 .config 反向查找可能的上游包"
+        grep -E "^CONFIG_PACKAGE_(mwan3|olsrd|qos-scripts|bandwidthd|coova-chilli|pbr|kmod-ipt|iptables-mod)" .config
+        echo ""
+        echo "方法2：模拟编译 iptables-zz-legacy 查看依赖来源"
+        make -j1 -n V=s package/iptables-zz-legacy/compile 2>&1 | grep -E "Selected by|needs to be built" | head -20 || true
+        echo "----------------------------------------"
+        echo "请根据上方输出手动禁用对应的上游包，或检查是否还有遗漏的 Makefile 未重定向。"
+    fi
+    echo "::error::由于冲突无法自动解决，编译将终止。"
     exit 1
 else
-    echo "✓ 依赖回滚检查通过，未发现强制禁用包被重新启用。"
+    echo "✓ 二次扫描通过：iptables-zz-legacy 已被成功移除。"
 fi
 
-echo ""
-echo "配置已锁定，开始后续编译..."
+# ============================================================
+# 6. 输出最终配置文件供下载（测试模式）
+# ============================================================
+if [[ "$WRT_TEST" == "true" ]]; then
+    # 确保 test_output 目录存在（如果不存在则创建）
+    mkdir -p ./test_output
+    cp .config ./test_output/Config-Final.txt
+    echo "✓ 最终配置文件已保存至 ./test_output/Config-Final.txt，可在 Actions 的 Artifacts 中下载检查。"
+    
+    # 可选：输出关键配置摘要到日志，方便快速查看
+    echo ""
+    echo "========== 关键配置摘要 =========="
+    echo "firewall4: $(grep '^CONFIG_PACKAGE_firewall4=' .config)"
+    echo "iptables-nft: $(grep '^CONFIG_PACKAGE_iptables-nft=' .config)"
+    echo "iptables-zz-legacy: $(grep '^CONFIG_PACKAGE_iptables-zz-legacy=' .config)"
+    echo "核心包状态:"
+    for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall2; do
+        grep "^CONFIG_PACKAGE_${pkg}=" .config || echo "CONFIG_PACKAGE_${pkg} not set"
+    done
+    echo "================================="
+fi
+
+echo "配置已锁定，继续后续编译..."
 
 
 
