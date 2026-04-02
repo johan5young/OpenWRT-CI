@@ -93,7 +93,6 @@ sed -i 's/CONFIG_PACKAGE_kmod-usb-net-ipheth\.y/# CONFIG_PACKAGE_kmod-usb-net-ip
 sed -i 's/CONFIG_PACKAGE_libimobiledevice\.y/# CONFIG_PACKAGE_libimobiledevice is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_usbmuxd\.y/# CONFIG_PACKAGE_usbmuxd is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rndis\.y/# CONFIG_PACKAGE_kmod-usb-net-rndis is not set/g' .config
-
 # ---------------------------------------------------------
 # 2. 彻底禁用外置 USB 有线网卡驱动 (ASIX/Realtek/CDC)
 # ---------------------------------------------------------
@@ -106,7 +105,6 @@ sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ncm\.y/# CONFIG_PACKAGE_kmod-usb-net-c
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-subset\.y/# CONFIG_PACKAGE_kmod-usb-net-cdc-subset is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8150\.y/# CONFIG_PACKAGE_kmod-usb-net-rtl8150 is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8152\.y/# CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set/g' .config
-
 # ---------------------------------------------------------
 # 3. 彻底禁用 4G/5G 模块与 WWAN 拨号驱动 (QMI/MBIM/Huawei)
 # ---------------------------------------------------------
@@ -116,12 +114,62 @@ sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan\.y/# CONFIG_PACKAGE_kmod-usb-net-
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom\.y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel\.y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_kmod-usb-net-sierrawireless\.y/# CONFIG_PACKAGE_kmod-usb-net-sierrawireless is not set/g' .config
-
 # ---------------------------------------------------------
 # 4. 彻底禁用 USB 音频支持 (USB Audio/Sound Core)
 # ---------------------------------------------------------
 sed -i 's/CONFIG_PACKAGE_kmod-usb-audio\.y/# CONFIG_PACKAGE_kmod-usb-audio is not set/g' .config
 sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is not set/g' .config
+
+
+
+
+# ============================================================
+# 1. 强制使用 firewall4 (nftables) 并禁用冲突的 legacy 包
+# ============================================================
+sed -i '/CONFIG_PACKAGE_iptables-zz-legacy=y/d' .config
+sed -i '/CONFIG_PACKAGE_firewall3=y/d' .config
+sed -i '/CONFIG_PACKAGE_firewall=y/d' .config
+echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set" >> .config
+echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
+echo "# CONFIG_PACKAGE_firewall is not set" >> .config
+echo "CONFIG_PACKAGE_firewall4=y" >> .config
+echo "CONFIG_PACKAGE_iptables-nft=y" >> .config
+
+# 重新运行 defconfig 使配置生效（同时会解析依赖）
+make defconfig
+
+# ============================================================
+# 2. 冲突回滚检查：确保上面禁用的包没有被依赖强制重新启用
+# ============================================================
+echo ""
+echo "正在检查依赖冲突回滚..."
+
+FORBIDDEN_PACKAGES="iptables-zz-legacy firewall3 firewall"
+CONFLICT=0
+
+for pkg in $FORBIDDEN_PACKAGES; do
+    if grep -q "^CONFIG_PACKAGE_${pkg}=y" .config; then
+        echo "::error::检测到冲突！包 ${pkg} 被依赖强制重新启用。"
+        CONFLICT=1
+    fi
+done
+
+if [ $CONFLICT -eq 1 ]; then
+    echo ""
+    echo "::error::由于依赖冲突，编译无法继续。请检查您选择的软件包（特别是 mwan3、qos-scripts 等旧版插件）。"
+    echo "::error::建议在 make menuconfig 中禁用上述冲突的包，或移除强制依赖它们的插件。"
+    exit 1
+else
+    echo "✓ 依赖回滚检查通过，未发现强制禁用包被重新启用。"
+fi
+
+echo ""
+echo "配置已锁定，开始后续编译..."
+
+
+
+
+
 
 # 最后清理配置，确保生效
 sed -i 's/\r$//' .config
