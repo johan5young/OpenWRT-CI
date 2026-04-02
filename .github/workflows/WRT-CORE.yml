@@ -217,7 +217,7 @@ jobs:
             echo "::warning::批量下载失败，进入单包容错模式..."
           }
 
-          # 定义关键包列表
+          # 定义关键包列表（与 Packages.sh 中的包名一致）
           CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 sing-box xray-core"
 
           # 提取失败包名（仅当下载失败时）
@@ -318,9 +318,24 @@ jobs:
           
           echo "::endgroup::"
 
-      # ==================== 编译固件（测试模式/正式模式） ====================
+      # ==================== 构建 Host 工具链 ====================
+      - name: Build Host Tools and Toolchain
+        id: build_host_tools
+        # 正式编译时总是构建；测试模式下仅当启用单包测试时构建
+        if: env.WRT_TEST != 'true' || env.WRT_SINGLE_TEST == 'true'
+        run: |
+          cd ./wrt/
+          echo "::group::Building host tools and toolchain"
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+          echo "::endgroup::"
+
+      # ==================== 编译固件（测试模式/正式编译） ====================
       - name: Compile Firmware (测试模式或正式编译)
         id: compile
+        timeout-minutes: 350
+        env:
+          CCACHE_DIR: ./wrt/.ccache
         run: |
           cd ./wrt/
           
@@ -418,9 +433,12 @@ jobs:
             # 正式编译前再次确保下载完整
             make download -j$(nproc) || make download -j1 V=s
 
-            # 全量编译，单线程详细输出，保存日志
-            echo "开始全量编译（单线程，详细输出）..."
-            make -j1 V=s 2>&1 | tee build.log
+            # 启用 ccache（如果未自动生效）
+            export PATH="/usr/lib/ccache:$PATH"
+
+            # 全量编译，2 个并行任务，详细输出，保存日志
+            echo "开始全量编译（2 线程，详细日志）..."
+            make -j2 V=s 2>&1 | tee build.log
 
             # 检查核心包是否在日志中出现错误
             CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2"
