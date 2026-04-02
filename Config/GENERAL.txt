@@ -126,5 +126,5 @@ CONFIG_PACKAGE_kmod-sdhci-msm=y
 
 #编译耗时，可以后期安装的
 # CONFIG_PACKAGE_luci-app-homeproxy is not set
-CONFIG_PACKAGE_luci-app-ddns-go=y
-CONFIG_PACKAGE_luci-app-mosdns=y
+# CONFIG_PACKAGE_luci-app-ddns-go is not set
+# CONFIG_PACKAGE_luci-app-mosdns is not set
