@@ -1,19 +1,9 @@
 #科学插件调整
-CONFIG_PACKAGE_luci-app-homeproxy=y
 #增加插件
 CONFIG_PACKAGE_luci-app-autoreboot=y
-CONFIG_PACKAGE_luci-app-partexp=y
 CONFIG_PACKAGE_luci-app-samba4=y
 CONFIG_PACKAGE_luci-app-upnp=y
-CONFIG_PACKAGE_luci-app-wolplus=y
-CONFIG_PACKAGE_luci-app-lucky=y
 # CONFIG_PACKAGE_luci-app-homeproxy is not set
-CONFIG_PACKAGE_luci-app-passwall2=y
-#删除插件
-# CONFIG_PACKAGE_luci-app-attendedsysupgrade is not set
-# CONFIG_PACKAGE_luci-app-wol is not set
-# CONFIG_PACKAGE_luci-app-tailscale is not set
-# CONFIG_PACKAGE_luci-app-gecoosac is not set
 #参数调整
 CONFIG_CCACHE=y
 CONFIG_DEVEL=y
@@ -146,12 +136,12 @@ CONFIG_PACKAGE_luci-app-easytier=y
 CONFIG_PACKAGE_kmod-mmc-block=y
 CONFIG_PACKAGE_kmod-sdhci-msm=y
 
-# 6. 依赖、兼容性与黑名单
-CONFIG_PACKAGE_luci-compat=y
-CONFIG_PACKAGE_luci-lib-ipkg=y
-
-# 7. 报错黑名单
+#删除插件
+# CONFIG_PACKAGE_luci-app-attendedsysupgrade is not set
+# CONFIG_PACKAGE_luci-app-wol is not set
 # CONFIG_PACKAGE_luci-app-tailscale is not set
+# CONFIG_PACKAGE_luci-app-gecoosac is not set
+# 7. 报错黑名单
 # CONFIG_PACKAGE_tailscale is not set
 # CONFIG_PACKAGE_luci-app-timewol is not set
 # CONFIG_PACKAGE_luci-app-qbittorrent is not set
