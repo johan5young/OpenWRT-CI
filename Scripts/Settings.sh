@@ -134,6 +134,37 @@ echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
 echo "# CONFIG_PACKAGE_firewall is not set" >> .config
 echo "CONFIG_PACKAGE_firewall4=y" >> .config
 echo "CONFIG_PACKAGE_iptables-nft=y" >> .config
+echo "CONFIG_PACKAGE_ip6tables-nft=y" >> .config
+echo "CONFIG_PACKAGE_xtables-nft=y" >> .config
+echo "CONFIG_PACKAGE_ebtables-nft=y" >> .config
+
+
+
+# ---------------------------------------------------------
+# 方案 A 增强版（优化顺序）
+# ---------------------------------------------------------
+echo "开始执行依赖重定向与物理切除..."
+
+# 1. 先修改依赖（防止后面删除后找不到）
+find package/feeds/ -name "Makefile" -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} +
+
+# 2. 再删除冲突包（此时依赖已重定向，安全）
+targets=(
+    "package/feeds/base/iptables-zz-legacy"
+    "package/feeds/packages/fail2ban"
+    "package/feeds/packages/onionshare-cli"
+    "package/feeds/packages/setools"
+    "package/feeds/packages/luci-app-timewol"
+)
+for target in "${targets[@]}"; do
+    [ -d "$target" ] && rm -rf "$target" && echo "已删除: $target"
+done
+
+# 3. 重新生成配置
+make defconfig
+
+
+
 
 # 重新运行 defconfig 使配置生效（同时会解析依赖）
 make defconfig
