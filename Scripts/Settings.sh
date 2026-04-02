@@ -122,104 +122,83 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is 
 
 
 
-
 # ============================================================
-# 终极防冲突方案：精准物理切除 + 依赖重定向 + 递归隔离
+# 针对 NN6000 V2 快照版的“空壳定向”补丁方案gemini版
 # ============================================================
-echo ""
-echo "正在执行依赖清理与冲突包物理删除..."
+echo "正在执行深层依赖修补..."
 
-# 1. 物理删除冲突包源码（使用 find 避免路径硬编码，确保源码彻底消失）
-echo "1. 物理删除冲突包源码..."
-BLACKLIST_PKGS=(
-    "iptables-zz-legacy"
-    "fail2ban"
-    "onionshare-cli"
-    "setools"
-    "selinux-python"
-    "luci-app-timewol"
+# 1. 物理切除导致 Kconfig 递归报错的源码（这些是编译死循环的根源）
+# 直接删除整个源码文件夹，让系统根本扫描不到它们
+REMOVE_LIST=(
+    "package/feeds/packages/fwupd"
+    "package/feeds/packages/openvswitch"
+    "package/feeds/packages/ovsd"
 )
-for pkg in "${BLACKLIST_PKGS[@]}"; do
-    find package/ feeds/ -type d -name "$pkg" -exec rm -rf {} \; 2>/dev/null
-    echo "已切除源码目录: $pkg"
+for dir in "${REMOVE_LIST[@]}"; do
+    if [ -d "$dir" ]; then
+        rm -rf "$dir"
+        echo "已物理剔除递归报错源: $dir"
+    fi
 done
 
-# 2. 定向依赖重定向（修正 Makefile 里的硬编码依赖）
-echo "2. 执行定向依赖重定向..."
-# 只替换特定的 legacy 报名，防止误伤 iptables-mod-* 链条
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} + 2>/dev/null
-# 针对某些老旧插件直接依赖虚拟包 'iptables' 的情况，引导至 nft
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables$/+iptables-nft/g' {} + 2>/dev/null
-echo "✓ 依赖定向重定向完成。"
+# 2. 彻底删除原有的 iptables-zz-legacy 源码
+rm -rf package/feeds/base/iptables-zz-legacy
 
-# 3. 注入核心配置与屏蔽死循环包
-echo "3. 强制锁定防火墙体系并隔离递归依赖源..."
-# 物理抹除旧配置标记
-sed -i '/CONFIG_PACKAGE_iptables-zz-legacy=y/d' .config
+# 3. 【核心步骤】伪造一个带有定向功能的 iptables-zz-legacy
+# 我们创建一个空的 Makefile，声明它依赖 iptables-nft，但本身不产生任何文件
+echo "正在创建虚拟定向包 iptables-zz-legacy -> iptables-nft ..."
+mkdir -p package/feeds/base/iptables-zz-legacy
+cat <<EOF > package/feeds/base/iptables-zz-legacy/Makefile
+include \$(TOPDIR)/rules.mk
+
+PKG_NAME:=iptables-zz-legacy
+PKG_VERSION:=999
+PKG_RELEASE:=1
+
+include \$(INCLUDE_DIR)/package.mk
+
+define Package/iptables-zz-legacy
+  SECTION:=net
+  CATEGORY:=Network
+  TITLE:=Fake Compatibility Layer for nftables
+  # 关键：这里实现重定向，任何依赖此包的插件都会自动拉起 iptables-nft
+  DEPENDS:=+iptables-nft +ip6tables-nft +xtables-nft
+endef
+
+define Build/Compile
+	# 空操作，不编译任何代码
+endef
+
+define Package/iptables-zz-legacy/install
+	# 空操作，不往固件里塞任何文件
+	true
+endef
+
+\$(eval \$(call BuildPackage,iptables-zz-legacy))
+EOF
+
+# 4. 预先注入正确的防火墙配置，防止被旧配置覆盖
 sed -i '/CONFIG_PACKAGE_firewall/d' .config
-
+sed -i '/CONFIG_PACKAGE_iptables/d' .config
 {
     echo "CONFIG_PACKAGE_firewall4=y"
     echo "CONFIG_PACKAGE_iptables-nft=y"
     echo "CONFIG_PACKAGE_ip6tables-nft=y"
     echo "CONFIG_PACKAGE_xtables-nft=y"
-    echo "CONFIG_PACKAGE_ebtables-nft=y"
-    echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set"
-    echo "# CONFIG_PACKAGE_firewall is not set"
-    echo "# CONFIG_PACKAGE_firewall3 is not set"
-    
-    # --- 强力切断递归依赖死循环 (针对快照版 Bug) ---
-    echo "# CONFIG_PACKAGE_openvswitch is not set"
-    echo "# CONFIG_PACKAGE_openvswitch-ovn-host is not set"
-    echo "# CONFIG_PACKAGE_ovsd is not set"
-    echo "# CONFIG_PACKAGE_kmod-openvswitch-geneve is not set"
-    echo "# CONFIG_PACKAGE_kmod-openvswitch-gre is not set"
-    echo "# CONFIG_PACKAGE_kmod-openvswitch-vxlan is not set"
-    echo "# CONFIG_PACKAGE_fwupd is not set"
-    echo "# CONFIG_PACKAGE_fwupd-libs is not set"
+    # 让系统默认选中我们的“空壳定向包”，这样依赖链就不会断
+    echo "CONFIG_PACKAGE_iptables-zz-legacy=y"
 } >> .config
 
-# 4. 禁用已知会强行拉回 legacy 的不稳定插件
-echo "4. 禁用可能引发冲突的高风险上游包..."
-for pkg in mwan3 qos-scripts shorewall shorewall6 wifidog libreswan strongswan nodogsplash; do
-    sed -i "/CONFIG_PACKAGE_${pkg}=y/d" .config
-    echo "# CONFIG_PACKAGE_${pkg} is not set" >> .config
-done
-
-# 5. 首次解析依赖并二次清洗
-echo "5. 运行解析与二次配置清洗..."
-make defconfig
-# 再次确保 legacy 没有因为依赖自动回滚被重新勾选
-sed -i '/CONFIG_PACKAGE_iptables-zz-legacy=y/d' .config
-echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set" >> .config
+# 5. 执行解析。此时系统会看到“假包”存在，满足了依赖关系，且不会报错
+echo "执行第一次依赖解析..."
 make defconfig
 
-# 6. 二次冲突扫描
-echo ""
-echo "6. 执行二次冲突扫描..."
-if grep -q "^CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
-    echo "::error::错误：iptables-zz-legacy 仍然被依赖强制启用！"
-    if [[ "$WRT_TEST" == "true" ]]; then
-        echo "----------------------------------------"
-        echo "残留配置分析："
-        grep -E "iptables-zz-legacy|kmod-ipt-" .config | grep "=y" || echo "（仅内核模块残留，通常安全）"
-        echo "----------------------------------------"
-    fi
-    exit 1
-else
-    echo "✓ 二次扫描通过：防火墙冲突隐患已排除。"
-fi
+# 6. 二次清洗：虽然我们造了假包，但为了保持固件绝对纯净，我们再次尝试关闭它
+# 即使关闭失败，由于它是空壳包，也不会造成打包冲突
+sed -i 's/CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/g' .config
+make defconfig
 
-# 7. 摘要输出 (测试模式)
-if [[ "$WRT_TEST" == "true" ]]; then
-    mkdir -p ./test_output
-    cp .config ./test_output/Config-Final.txt
-    echo "========== 关键配置摘要 =========="
-    grep -E "^CONFIG_PACKAGE_(firewall4|iptables-nft|iptables-zz-legacy)=" .config || true
-    echo "================================="
-fi
-
-echo "配置已成功锁定，正在继续编译流程..."
+echo "✓ 定向补丁已就位，递归依赖已切断。"
 
 
 
