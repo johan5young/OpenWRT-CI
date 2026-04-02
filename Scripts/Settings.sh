@@ -123,82 +123,77 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is 
 
 
 # ============================================================
-# 针对 NN6000 V2 快照版的“空壳定向”补丁方案gemini版
+# 终极解决：彻底删除冲突源码 + 强制锁定 firewall4  deepseek版本
 # ============================================================
-echo "正在执行深层依赖修补..."
+echo "正在执行终极清理..."
 
-# 1. 物理切除导致 Kconfig 递归报错的源码（这些是编译死循环的根源）
-# 直接删除整个源码文件夹，让系统根本扫描不到它们
-REMOVE_LIST=(
+# 1. 删除所有可能引起冲突的源码目录（使用更宽泛的路径）
+REMOVE_DIRS=(
+    "package/feeds/base/iptables-zz-legacy"
+    "package/feeds/packages/iptables-zz-legacy"
     "package/feeds/packages/fwupd"
     "package/feeds/packages/openvswitch"
     "package/feeds/packages/ovsd"
+    "package/feeds/packages/fail2ban"
+    "package/feeds/packages/onionshare-cli"
+    "package/feeds/packages/setools"
+    "package/feeds/packages/selinux-python"
+    "package/feeds/packages/luci-app-timewol"
 )
-for dir in "${REMOVE_LIST[@]}"; do
-    if [ -d "$dir" ]; then
-        rm -rf "$dir"
-        echo "已物理剔除递归报错源: $dir"
-    fi
+for dir in "${REMOVE_DIRS[@]}"; do
+    [ -d "$dir" ] && rm -rf "$dir" && echo "已删除: $dir"
 done
+# 使用 find 删除任何残留的 iptables-zz-legacy 目录
+find package/ feeds/ -type d -name "iptables-zz-legacy" -exec rm -rf {} \; 2>/dev/null
 
-# 2. 彻底删除原有的 iptables-zz-legacy 源码
-rm -rf package/feeds/base/iptables-zz-legacy
+# 2. 强制修改所有 Makefile，将依赖 iptables 的指向 iptables-nft
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} + 2>/dev/null
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables\b/+iptables-nft/g' {} + 2>/dev/null
 
-# 3. 【核心步骤】伪造一个带有定向功能的 iptables-zz-legacy
-# 我们创建一个空的 Makefile，声明它依赖 iptables-nft，但本身不产生任何文件
-echo "正在创建虚拟定向包 iptables-zz-legacy -> iptables-nft ..."
-mkdir -p package/feeds/base/iptables-zz-legacy
-cat <<EOF > package/feeds/base/iptables-zz-legacy/Makefile
-include \$(TOPDIR)/rules.mk
+# 3. 清除 .config 中所有 legacy 相关配置
+sed -i '/CONFIG_PACKAGE_iptables-zz-legacy/d' .config
+sed -i '/CONFIG_PACKAGE_firewall3/d' .config
+sed -i '/CONFIG_PACKAGE_firewall=/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-ipt-/d' .config
+sed -i '/CONFIG_PACKAGE_iptables-mod-/d' .config
 
-PKG_NAME:=iptables-zz-legacy
-PKG_VERSION:=999
-PKG_RELEASE:=1
-
-include \$(INCLUDE_DIR)/package.mk
-
-define Package/iptables-zz-legacy
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=Fake Compatibility Layer for nftables
-  # 关键：这里实现重定向，任何依赖此包的插件都会自动拉起 iptables-nft
-  DEPENDS:=+iptables-nft +ip6tables-nft +xtables-nft
-endef
-
-define Build/Compile
-	# 空操作，不编译任何代码
-endef
-
-define Package/iptables-zz-legacy/install
-	# 空操作，不往固件里塞任何文件
-	true
-endef
-
-\$(eval \$(call BuildPackage,iptables-zz-legacy))
+# 4. 写入新的正确配置
+cat <<EOF >> .config
+# CONFIG_PACKAGE_iptables-zz-legacy is not set
+# CONFIG_PACKAGE_firewall3 is not set
+# CONFIG_PACKAGE_firewall is not set
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_iptables-nft=y
+CONFIG_PACKAGE_ip6tables-nft=y
+CONFIG_PACKAGE_xtables-nft=y
+CONFIG_PACKAGE_ebtables-nft=y
+# 禁用递归警告包
+# CONFIG_PACKAGE_fwupd is not set
+# CONFIG_PACKAGE_fwupd-libs is not set
+# CONFIG_PACKAGE_openvswitch is not set
+# CONFIG_PACKAGE_openvswitch-ovn-host is not set
+# CONFIG_PACKAGE_ovsd is not set
+# CONFIG_PACKAGE_kmod-openvswitch-geneve is not set
+# CONFIG_PACKAGE_kmod-openvswitch-gre is not set
+# CONFIG_PACKAGE_kmod-openvswitch-vxlan is not set
 EOF
 
-# 4. 预先注入正确的防火墙配置，防止被旧配置覆盖
-sed -i '/CONFIG_PACKAGE_firewall/d' .config
-sed -i '/CONFIG_PACKAGE_iptables/d' .config
-{
-    echo "CONFIG_PACKAGE_firewall4=y"
-    echo "CONFIG_PACKAGE_iptables-nft=y"
-    echo "CONFIG_PACKAGE_ip6tables-nft=y"
-    echo "CONFIG_PACKAGE_xtables-nft=y"
-    # 让系统默认选中我们的“空壳定向包”，这样依赖链就不会断
-    echo "CONFIG_PACKAGE_iptables-zz-legacy=y"
-} >> .config
-
-# 5. 执行解析。此时系统会看到“假包”存在，满足了依赖关系，且不会报错
-echo "执行第一次依赖解析..."
+# 5. 运行 defconfig
 make defconfig
 
-# 6. 二次清洗：虽然我们造了假包，但为了保持固件绝对纯净，我们再次尝试关闭它
-# 即使关闭失败，由于它是空壳包，也不会造成打包冲突
-sed -i 's/CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/g' .config
-make defconfig
+# 6. 二次检查
+if grep -q "^CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
+    echo "::error::仍然检测到 iptables-zz-legacy，请手动检查 .config"
+    exit 1
+else
+    echo "✓ 冲突已解决"
+fi
 
-echo "✓ 定向补丁已就位，递归依赖已切断。"
+# 7. 保存配置（测试模式）
+if [[ "$WRT_TEST" == "true" ]]; then
+    mkdir -p ./test_output
+    cp .config ./test_output/Config-Final.txt
+fi
 
 
 
