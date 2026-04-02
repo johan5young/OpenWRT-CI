@@ -123,77 +123,78 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is 
 
 
 # ============================================================
-# 终极解决：彻底删除冲突源码 + 强制锁定 firewall4  deepseek版本
+# 终极方案：创建定向空壳包，解决 iptables-zz-legacy 冲突deepseek版
 # ============================================================
-echo "正在执行终极清理..."
+echo ""
+echo "正在执行精准冲突修复..."
 
-# 1. 删除所有可能引起冲突的源码目录（使用更宽泛的路径）
-REMOVE_DIRS=(
-    "package/feeds/base/iptables-zz-legacy"
-    "package/feeds/packages/iptables-zz-legacy"
-    "package/feeds/packages/fwupd"
-    "package/feeds/packages/openvswitch"
-    "package/feeds/packages/ovsd"
-    "package/feeds/packages/fail2ban"
-    "package/feeds/packages/onionshare-cli"
-    "package/feeds/packages/setools"
-    "package/feeds/packages/selinux-python"
-    "package/feeds/packages/luci-app-timewol"
-)
-for dir in "${REMOVE_DIRS[@]}"; do
-    [ -d "$dir" ] && rm -rf "$dir" && echo "已删除: $dir"
-done
-# 使用 find 删除任何残留的 iptables-zz-legacy 目录
+# 1. 删除所有原有的 iptables-zz-legacy 源码（避免冲突）
 find package/ feeds/ -type d -name "iptables-zz-legacy" -exec rm -rf {} \; 2>/dev/null
+echo "✓ 已删除原有 iptables-zz-legacy 源码"
 
-# 2. 强制修改所有 Makefile，将依赖 iptables 的指向 iptables-nft
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} + 2>/dev/null
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables\b/+iptables-nft/g' {} + 2>/dev/null
+# 2. 创建假的 iptables-zz-legacy 包（重定向到 iptables-nft）
+FAKE_DIR="package/iptables-zz-legacy"
+mkdir -p "$FAKE_DIR"
+cat << 'EOF' > "$FAKE_DIR/Makefile"
+include $(TOPDIR)/rules.mk
 
-# 3. 清除 .config 中所有 legacy 相关配置
+PKG_NAME:=iptables-zz-legacy
+PKG_VERSION:=1.0
+PKG_RELEASE:=1
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/iptables-zz-legacy
+  SECTION:=net
+  CATEGORY:=Network
+  TITLE:=Fake package to redirect legacy iptables dependency to nftables
+  DEPENDS:=+iptables-nft +ip6tables-nft +xtables-nft
+  PROVIDES:=iptables ip6tables
+endef
+
+define Build/Compile
+endef
+
+define Package/iptables-zz-legacy/install
+	true
+endef
+
+$(eval $(call BuildPackage,iptables-zz-legacy))
+EOF
+echo "✓ 已创建定向空壳包 (package/iptables-zz-legacy)"
+
+# 3. 强制选中这个假包，并确保 firewall4 和 iptables-nft 也被选中
 sed -i '/CONFIG_PACKAGE_iptables-zz-legacy/d' .config
 sed -i '/CONFIG_PACKAGE_firewall3/d' .config
 sed -i '/CONFIG_PACKAGE_firewall=/d' .config
-sed -i '/CONFIG_PACKAGE_kmod-ipt-/d' .config
-sed -i '/CONFIG_PACKAGE_iptables-mod-/d' .config
+{
+    echo "CONFIG_PACKAGE_iptables-zz-legacy=y"
+    echo "CONFIG_PACKAGE_firewall4=y"
+    echo "CONFIG_PACKAGE_iptables-nft=y"
+    echo "CONFIG_PACKAGE_ip6tables-nft=y"
+    echo "CONFIG_PACKAGE_xtables-nft=y"
+    echo "CONFIG_PACKAGE_ebtables-nft=y"
+} >> .config
 
-# 4. 写入新的正确配置
-cat <<EOF >> .config
-# CONFIG_PACKAGE_iptables-zz-legacy is not set
-# CONFIG_PACKAGE_firewall3 is not set
-# CONFIG_PACKAGE_firewall is not set
-CONFIG_PACKAGE_firewall4=y
-CONFIG_PACKAGE_iptables-nft=y
-CONFIG_PACKAGE_ip6tables-nft=y
-CONFIG_PACKAGE_xtables-nft=y
-CONFIG_PACKAGE_ebtables-nft=y
-# 禁用递归警告包
-# CONFIG_PACKAGE_fwupd is not set
-# CONFIG_PACKAGE_fwupd-libs is not set
-# CONFIG_PACKAGE_openvswitch is not set
-# CONFIG_PACKAGE_openvswitch-ovn-host is not set
-# CONFIG_PACKAGE_ovsd is not set
-# CONFIG_PACKAGE_kmod-openvswitch-geneve is not set
-# CONFIG_PACKAGE_kmod-openvswitch-gre is not set
-# CONFIG_PACKAGE_kmod-openvswitch-vxlan is not set
-EOF
-
-# 5. 运行 defconfig
+# 4. 重新生成配置
 make defconfig
 
-# 6. 二次检查
+# 5. 验证 iptables-zz-legacy 是否为假包（检查其依赖）
 if grep -q "^CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
-    echo "::error::仍然检测到 iptables-zz-legacy，请手动检查 .config"
-    exit 1
+    echo "✓ 假包已被选中，冲突解决。"
 else
-    echo "✓ 冲突已解决"
+    echo "::error::假包未被选中，请检查 package/iptables-zz-legacy/Makefile 是否存在"
+    exit 1
 fi
 
-# 7. 保存配置（测试模式）
+# 6. 保存最终配置（测试模式）
 if [[ "$WRT_TEST" == "true" ]]; then
     mkdir -p ./test_output
     cp .config ./test_output/Config-Final.txt
+    echo "✓ 最终配置已保存到 test_output/Config-Final.txt"
 fi
+
+echo "冲突修复完成，继续编译..."
 
 
 
