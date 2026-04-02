@@ -76,19 +76,10 @@ sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=100/g' 
 sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=1024/g' .config
 # 补齐 Python3 核心运行环境 (彻底消除依赖警告)
 # ---------------------------------------------------------
-# 基础解释器
-echo "CONFIG_PACKAGE_python3=y" >> .config
+# 最小 Python 环境（解决依赖警告）
 echo "CONFIG_PACKAGE_python3-light=y" >> .config
-echo "CONFIG_PACKAGE_python3-base=y" >> .config
-
-# 关键资源管理组件 (解决 fail2ban 和 setools 的报错)
 echo "CONFIG_PACKAGE_python3-pkg-resources=y" >> .config
-echo "CONFIG_PACKAGE_python3-setuptools=y" >> .config
-
-# 常用基础库 (预防 onionshare 等软件的类似警告)
-echo "CONFIG_PACKAGE_python3-codecs=y" >> .config
-echo "CONFIG_PACKAGE_python3-logging=y" >> .config
-echo "CONFIG_PACKAGE_python3-openssl=y" >> .config
+# 不要加 python3、python3-codecs、python3-logging、python3-openssl 等
 
 echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
 echo "CONFIG_PACKAGE_open-app-filter=y" >> .config
