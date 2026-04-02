@@ -122,34 +122,62 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is 
 
 
 
-# ============================================================
-# 终极方案：创建定向空壳包，解决 iptables-zz-legacy 冲突deepseek版
-# ============================================================
-echo ""
-echo "正在执行精准冲突修复..."
+#!/bin/bash
 
-# 1. 删除所有原有的 iptables-zz-legacy 源码（避免冲突）
-find package/ feeds/ -type d -name "iptables-zz-legacy" -exec rm -rf {} \; 2>/dev/null
-echo "✓ 已删除原有 iptables-zz-legacy 源码"
+# ============================================================
+# NN6000 V2 (ImmortalWrt Snapshot) 终极修复脚本   gemini版
+# 策略：物理切除报错源 + 建立虚拟重定向包 + 锁定 FW4 体系
+# ============================================================
 
-# 2. 创建假的 iptables-zz-legacy 包（重定向到 iptables-nft）
-FAKE_DIR="package/iptables-zz-legacy"
-mkdir -p "$FAKE_DIR"
-cat << 'EOF' > "$FAKE_DIR/Makefile"
-include $(TOPDIR)/rules.mk
+echo "开始执行深层环境清理与依赖修补..."
+
+# 1. 物理切除导致 Kconfig 递归报错/依赖缺失的源码目录
+# 这些包在快照版中存在逻辑 Bug 或会导致编译链中断，且路由器基本不需要
+REMOVE_LIST=(
+    "package/feeds/packages/fwupd"
+    "package/feeds/packages/openvswitch"
+    "package/feeds/packages/ovsd"
+    "package/feeds/packages/ovn"
+    "package/feeds/packages/fail2ban"
+    "package/feeds/packages/onionshare-cli"
+    "package/feeds/packages/setools"
+    "package/feeds/packages/selinux-python"
+    "package/feeds/packages/luci-app-timewol"
+    "package/feeds/base/iptables-zz-legacy"
+)
+
+echo "1. 正在物理剔除不稳定源码源..."
+for dir in "${REMOVE_LIST[@]}"; do
+    if [ -d "$dir" ]; then
+        rm -rf "$dir"
+        echo "   ✓ 已移除: $dir"
+    fi
+done
+
+# 2. 执行定向重定向（修正其他插件 Makefile 里的硬编码点名）
+echo "2. 正在执行 Makefile 依赖引导..."
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} + 2>/dev/null
+# 针对直接点名 +iptables 的情况，引导至现代版本
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables$/+iptables-nft/g' {} + 2>/dev/null
+
+# 3. 创建虚拟兼容包 (Stub Package)
+# 目的：骗过那些死活要找 iptables-zz-legacy 的插件，使其转向 firewall4
+echo "3. 正在创建虚拟定向包 iptables-zz-legacy -> firewall4 ..."
+mkdir -p package/feeds/base/iptables-zz-legacy
+cat <<EOF > package/feeds/base/iptables-zz-legacy/Makefile
+include \$(TOPDIR)/rules.mk
 
 PKG_NAME:=iptables-zz-legacy
-PKG_VERSION:=1.0
+PKG_VERSION:=999
 PKG_RELEASE:=1
 
-include $(INCLUDE_DIR)/package.mk
+include \$(INCLUDE_DIR)/package.mk
 
 define Package/iptables-zz-legacy
   SECTION:=net
   CATEGORY:=Network
-  TITLE:=Fake package to redirect legacy iptables dependency to nftables
-  DEPENDS:=+iptables-nft +ip6tables-nft +xtables-nft
-  PROVIDES:=iptables ip6tables
+  TITLE:=Fake Compatibility Layer for Firewall4
+  DEPENDS:=+firewall4 +iptables-nft
 endef
 
 define Build/Compile
@@ -159,42 +187,59 @@ define Package/iptables-zz-legacy/install
 	true
 endef
 
-$(eval $(call BuildPackage,iptables-zz-legacy))
+\$(eval \$(call BuildPackage,iptables-zz-legacy))
 EOF
-echo "✓ 已创建定向空壳包 (package/iptables-zz-legacy)"
 
-# 3. 强制选中这个假包，并确保 firewall4 和 iptables-nft 也被选中
-sed -i '/CONFIG_PACKAGE_iptables-zz-legacy/d' .config
-sed -i '/CONFIG_PACKAGE_firewall3/d' .config
-sed -i '/CONFIG_PACKAGE_firewall=/d' .config
+# 4. 注入核心配置并封杀递归包
+echo "4. 正在锁定 .config 防火墙体系..."
+# 清除旧的冲突标记
+sed -i '/CONFIG_PACKAGE_firewall/d' .config
+sed -i '/CONFIG_PACKAGE_iptables/d' .config
+
 {
-    echo "CONFIG_PACKAGE_iptables-zz-legacy=y"
+    # 强制开启现代防火墙架构
     echo "CONFIG_PACKAGE_firewall4=y"
     echo "CONFIG_PACKAGE_iptables-nft=y"
     echo "CONFIG_PACKAGE_ip6tables-nft=y"
     echo "CONFIG_PACKAGE_xtables-nft=y"
     echo "CONFIG_PACKAGE_ebtables-nft=y"
+    
+    # 显式禁用导致死循环和冲突的包
+    echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set"
+    echo "# CONFIG_PACKAGE_firewall is not set"
+    echo "# CONFIG_PACKAGE_firewall3 is not set"
+    echo "# CONFIG_PACKAGE_openvswitch is not set"
+    echo "# CONFIG_PACKAGE_fwupd is not set"
+    echo "# CONFIG_PACKAGE_fwupd-libs is not set"
+    
+    # 保护核心内核转发模块 (Quickfile/Passwall 所需)
+    echo "CONFIG_PACKAGE_kmod-ipt-core=y"
+    echo "CONFIG_PACKAGE_kmod-ipt-nat=y"
+    echo "CONFIG_PACKAGE_kmod-ipt-tproxy=y"
 } >> .config
 
-# 4. 重新生成配置
+# 5. 禁用已知会强行拉回 legacy 的高风险插件
+echo "5. 隔离可能引发二次冲突的插件..."
+for pkg in mwan3 qos-scripts shorewall shorewall6 wifidog libreswan strongswan nodogsplash; do
+    sed -i "/CONFIG_PACKAGE_${pkg}=y/d" .config
+    echo "# CONFIG_PACKAGE_${pkg} is not set" >> .config
+done
+
+# 6. 执行依赖解析与最终清洗
+echo "6. 正在执行 make defconfig 最终校验..."
 make defconfig
 
-# 5. 验证 iptables-zz-legacy 是否为假包（检查其依赖）
-if grep -q "^CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
-    echo "✓ 假包已被选中，冲突解决。"
-else
-    echo "::error::假包未被选中，请检查 package/iptables-zz-legacy/Makefile 是否存在"
-    exit 1
+# 再次确保 legacy 没有被意外勾选（双重保险）
+if grep -q "CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
+    sed -i 's/CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/g' .config
+    make defconfig
 fi
 
-# 6. 保存最终配置（测试模式）
-if [[ "$WRT_TEST" == "true" ]]; then
-    mkdir -p ./test_output
-    cp .config ./test_output/Config-Final.txt
-    echo "✓ 最终配置已保存到 test_output/Config-Final.txt"
-fi
-
-echo "冲突修复完成，继续编译..."
+echo "============================================================"
+echo "✓ 依赖修补完成！"
+echo "✓ 递归依赖已通过物理切除修复。"
+echo "✓ 虚拟定向包已就位，将引导系统使用现代防火墙。"
+echo "============================================================"
 
 
 
