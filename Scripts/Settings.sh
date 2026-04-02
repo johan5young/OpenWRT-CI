@@ -139,91 +139,95 @@ echo "CONFIG_PACKAGE_xtables-nft=y" >> .config
 echo "CONFIG_PACKAGE_ebtables-nft=y" >> .config
 
 
-
 # ============================================================
-# 终极防冲突方案：依赖重定向 + 物理删除 + 二次扫描
+# 终极防冲突方案：精准物理切除 + 依赖重定向 + 二次扫描
 # ============================================================
 echo ""
-echo "正在执行依赖重定向与冲突包物理删除..."
+echo "正在执行依赖清理与冲突包物理删除..."
 
-# 1. 将所有 Makefile 中对 iptables-zz-legacy 的依赖重定向到 iptables-nft
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} \; 2>/dev/null
-# 同时处理可能直接依赖 iptables (虚拟包) 的情况，强制改为 iptables-nft
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables\b/+iptables-nft/g' {} \; 2>/dev/null
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+ip6tables\b/+ip6tables-nft/g' {} \; 2>/dev/null
-echo "✓ 依赖重定向完成（所有 +iptables 已指向 +iptables-nft）"
+# 1. 依赖重定向（仅处理 legacy 和虚拟依赖，不破坏其他 iptables-mod-*）
+echo "1. 执行依赖重定向..."
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} + 2>/dev/null
+find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables\b/+iptables-nft/g' {} + 2>/dev/null
+echo "✓ 已将所有 +iptables-zz-legacy 和 +iptables 重定向到 +iptables-nft"
 
-# 2. 定义并物理删除黑名单包（这些包会引入冲突或产生无用警告）
-BLACKLIST=(
-    "package/feeds/base/iptables-zz-legacy"
-    "package/feeds/packages/fail2ban"
-    "package/feeds/packages/onionshare-cli"
-    "package/feeds/packages/setools"
-    "package/feeds/packages/luci-app-timewol"
+# 2. 物理删除黑名单包源码（使用 find 避免路径硬编码）
+echo "2. 物理删除冲突包源码..."
+BLACKLIST_PKGS=(
+    "iptables-zz-legacy"
+    "fail2ban"
+    "onionshare-cli"
+    "setools"
+    "selinux-python"
+    "luci-app-timewol"
 )
-for target in "${BLACKLIST[@]}"; do
-    if [ -d "$target" ]; then
-        rm -rf "$target"
-        echo "已删除: $target"
-    fi
+for pkg in "${BLACKLIST_PKGS[@]}"; do
+    find package/ feeds/ -type d -name "$pkg" -exec rm -rf {} \; 2>/dev/null
+    echo "已切除: $pkg"
 done
 
-# 3. 强制锁定 firewall4 和 iptables-nft 配置（确保 .config 中正确设置）
+# 3. 强制锁定 firewall4 体系，禁用 legacy 防火墙组件，切断递归依赖源
+echo "3. 强制启用 firewall4 / iptables-nft 并隔离死循环包..."
 sed -i '/CONFIG_PACKAGE_iptables-zz-legacy=y/d' .config
 sed -i '/CONFIG_PACKAGE_firewall3=y/d' .config
 sed -i '/CONFIG_PACKAGE_firewall=y/d' .config
-echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set" >> .config
-echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
-echo "# CONFIG_PACKAGE_firewall is not set" >> .config
-echo "CONFIG_PACKAGE_firewall4=y" >> .config
-echo "CONFIG_PACKAGE_iptables-nft=y" >> .config
-echo "CONFIG_PACKAGE_ip6tables-nft=y" >> .config
-echo "CONFIG_PACKAGE_xtables-nft=y" >> .config
-echo "CONFIG_PACKAGE_ebtables-nft=y" >> .config
-echo "✓ 已强制启用 firewall4 / iptables-nft 并禁用 legacy 包"
+{
+    echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set"
+    echo "# CONFIG_PACKAGE_firewall3 is not set"
+    echo "# CONFIG_PACKAGE_firewall is not set"
+    echo "CONFIG_PACKAGE_firewall4=y"
+    echo "CONFIG_PACKAGE_iptables-nft=y"
+    echo "CONFIG_PACKAGE_ip6tables-nft=y"
+    echo "CONFIG_PACKAGE_xtables-nft=y"
+    echo "CONFIG_PACKAGE_ebtables-nft=y"
+    # 切断已知的递归依赖报错源（路由器用不到）
+    echo "# CONFIG_PACKAGE_openvswitch is not set"
+    echo "# CONFIG_PACKAGE_openvswitch-ovn-host is not set"
+    echo "# CONFIG_PACKAGE_fwupd is not set"
+    echo "# CONFIG_PACKAGE_fwupd-libs is not set"
+} >> .config
 
-# 4. 运行 defconfig 让依赖解析生效
+# 4. 禁用强依赖 legacy iptables 的上游包（如果确实需要，可注释对应行）
+echo "4. 禁用可能引发冲突的上游包（如需保留请手动注释）..."
+for pkg in mwan3 qos-scripts shorewall shorewall6 wifidog libreswan strongswan nodogsplash; do
+    sed -i "/CONFIG_PACKAGE_${pkg}=y/d" .config
+    echo "# CONFIG_PACKAGE_${pkg} is not set" >> .config
+done
+
+echo "✓ 基础配置锁定完成"
+
+# 5. 运行 defconfig 解析依赖
+echo "5. 运行 make defconfig 解析依赖..."
 make defconfig
 
-# 5. 二次冲突扫描：检查 iptables-zz-legacy 是否仍被意外启用
+# 6. 二次冲突扫描
 echo ""
-echo "正在执行二次冲突扫描..."
+echo "6. 执行二次冲突扫描..."
 if grep -q "^CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
-    echo "::error::警告：iptables-zz-legacy 仍然被依赖强制启用！"
-    echo "正在尝试定位肇事包（测试模式将输出详细依赖链）..."
-    
-    # 如果是测试模式，输出更详细的信息
+    echo "::error::错误：iptables-zz-legacy 仍然被依赖强制启用！"
     if [[ "$WRT_TEST" == "true" ]]; then
         echo "----------------------------------------"
-        echo "方法1：通过 .config 反向查找可能的上游包"
-        grep -E "^CONFIG_PACKAGE_(mwan3|olsrd|qos-scripts|bandwidthd|coova-chilli|pbr|kmod-ipt|iptables-mod)" .config
+        echo "残留的 legacy 相关配置："
+        grep -E "CONFIG_PACKAGE_(iptables-zz-legacy|kmod-ipt-|iptables-mod-)" .config | grep "=y" || echo "（无）"
         echo ""
-        echo "方法2：模拟编译 iptables-zz-legacy 查看依赖来源"
+        echo "尝试模拟编译以定位依赖来源："
         make -j1 -n V=s package/iptables-zz-legacy/compile 2>&1 | grep -E "Selected by|needs to be built" | head -20 || true
         echo "----------------------------------------"
-        echo "请根据上方输出手动禁用对应的上游包，或检查是否还有遗漏的 Makefile 未重定向。"
+        echo "请根据输出手动禁用对应的上游包。"
     fi
-    echo "::error::由于冲突无法自动解决，编译将终止。"
     exit 1
 else
     echo "✓ 二次扫描通过：iptables-zz-legacy 已被成功移除。"
 fi
 
-# ============================================================
-# 6. 输出最终配置文件供下载（测试模式）
-# ============================================================
+# 7. 保存最终配置文件（测试模式）
 if [[ "$WRT_TEST" == "true" ]]; then
-    # 确保 test_output 目录存在（如果不存在则创建）
     mkdir -p ./test_output
     cp .config ./test_output/Config-Final.txt
-    echo "✓ 最终配置文件已保存至 ./test_output/Config-Final.txt，可在 Actions 的 Artifacts 中下载检查。"
-    
-    # 可选：输出关键配置摘要到日志，方便快速查看
+    echo "✓ 最终配置已保存至 ./test_output/Config-Final.txt"
     echo ""
     echo "========== 关键配置摘要 =========="
-    echo "firewall4: $(grep '^CONFIG_PACKAGE_firewall4=' .config)"
-    echo "iptables-nft: $(grep '^CONFIG_PACKAGE_iptables-nft=' .config)"
-    echo "iptables-zz-legacy: $(grep '^CONFIG_PACKAGE_iptables-zz-legacy=' .config)"
+    grep -E "^CONFIG_PACKAGE_(firewall4|iptables-nft|iptables-zz-legacy)=" .config || true
     echo "核心包状态:"
     for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall2; do
         grep "^CONFIG_PACKAGE_${pkg}=" .config || echo "CONFIG_PACKAGE_${pkg} not set"
@@ -232,8 +236,6 @@ if [[ "$WRT_TEST" == "true" ]]; then
 fi
 
 echo "配置已锁定，继续后续编译..."
-
-
 
 
 
