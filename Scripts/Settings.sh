@@ -139,7 +139,7 @@ echo "CONFIG_PACKAGE_iptables-nft=y" >> .config
 make defconfig
 
 # ============================================================
-# 2. 冲突回滚检查：确保上面禁用的包没有被依赖强制重新启用
+# 2. 冲突回滚检查 + 依赖分析（测试模式下自动定位肇事包）
 # ============================================================
 echo ""
 echo "正在检查依赖冲突回滚..."
@@ -151,13 +151,23 @@ for pkg in $FORBIDDEN_PACKAGES; do
     if grep -q "^CONFIG_PACKAGE_${pkg}=y" .config; then
         echo "::error::检测到冲突！包 ${pkg} 被依赖强制重新启用。"
         CONFLICT=1
+        
+        # 如果是测试模式，自动分析依赖来源
+        if [[ "$WRT_TEST" == "true" ]]; then
+            echo "正在分析依赖来源（测试模式），请稍候..."
+            echo "----------------------------------------"
+            # 使用 make -n 模拟编译，抓取依赖关系（不会实际编译）
+            make -j1 -n V=s package/${pkg}/compile 2>&1 | grep -E "Selected by|needs to be built" | head -20 || true
+            echo "----------------------------------------"
+            echo "上述输出中的 'Selected by' 或 'needs to be built' 即为强制依赖 ${pkg} 的包。"
+            echo "您可以根据这些信息，在 'make menuconfig' 中禁用对应的上游包。"
+        fi
     fi
 done
 
 if [ $CONFLICT -eq 1 ]; then
     echo ""
-    echo "::error::由于依赖冲突，编译无法继续。请检查您选择的软件包（特别是 mwan3、qos-scripts 等旧版插件）。"
-    echo "::error::建议在 make menuconfig 中禁用上述冲突的包，或移除强制依赖它们的插件。"
+    echo "::error::由于依赖冲突，编译无法继续。请根据上述分析结果调整您的软件包选择。"
     exit 1
 else
     echo "✓ 依赖回滚检查通过，未发现强制禁用包被重新启用。"
@@ -165,7 +175,6 @@ fi
 
 echo ""
 echo "配置已锁定，开始后续编译..."
-
 
 
 
