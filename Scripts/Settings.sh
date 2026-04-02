@@ -84,3 +84,45 @@ echo "CONFIG_PACKAGE_python3-pkg-resources=y" >> .config
 echo "CONFIG_PACKAGE_luci-app-oaf=y" >> .config
 echo "CONFIG_PACKAGE_open-app-filter=y" >> .config
 echo "CONFIG_PACKAGE_oaf=y" >> .config
+
+
+# ---------------------------------------------------------
+# 1. 彻底禁用 USB 手机网络共享与苹果设备支持 (iPhone/Android Tethering)
+# ---------------------------------------------------------
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-ipheth=y/# CONFIG_PACKAGE_kmod-usb-net-ipheth is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_libimobiledevice=y/# CONFIG_PACKAGE_libimobiledevice is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_usbmuxd=y/# CONFIG_PACKAGE_usbmuxd is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rndis=y/# CONFIG_PACKAGE_kmod-usb-net-rndis is not set/g' .config
+
+# ---------------------------------------------------------
+# 2. 彻底禁用外置 USB 有线网卡驱动 (ASIX/Realtek/CDC)
+# ---------------------------------------------------------
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net=y/# CONFIG_PACKAGE_kmod-usb-net is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-asix=y/# CONFIG_PACKAGE_kmod-usb-net-asix is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y/# CONFIG_PACKAGE_kmod-usb-net-asix-ax88179 is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-eem is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-ether is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-eem is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-ncm is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-subset is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8150=y/# CONFIG_PACKAGE_kmod-usb-net-rtl8150 is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8152=y/# CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set/g' .config
+
+# ---------------------------------------------------------
+# 3. 彻底禁用 4G/5G 模块与 WWAN 拨号驱动 (QMI/MBIM/Huawei)
+# ---------------------------------------------------------
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-mbim is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y/# CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom=y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel=y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-sierrawireless=y/# CONFIG_PACKAGE_kmod-usb-net-sierrawireless is not set/g' .config
+
+# ---------------------------------------------------------
+# 4. 彻底禁用 USB 音频支持 (USB Audio/Sound Core)
+# ---------------------------------------------------------
+sed -i 's/CONFIG_PACKAGE_kmod-usb-audio=y/# CONFIG_PACKAGE_kmod-usb-audio is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-sound-core=y/# CONFIG_PACKAGE_kmod-sound-core is not set/g' .config
+
+# 最后清理配置，确保生效
+sed -i 's/\r$//' .config
