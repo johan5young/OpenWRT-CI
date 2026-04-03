@@ -104,14 +104,16 @@ jobs:
         run: |
           cd ./wrt/
           
-          # 初始化仓库（如果已初始化则会提示 Reinitialized）
+          # 1. 彻底清理可能导致冲突的 Git 索引文件和配置
+          rm -rf .git
+          
+          # 2. 重新初始化
           git init
           
-          # 检查并配置远程地址（解决 origin already exists 报错）
-          git remote remove origin 2>/dev/null || true
+          # 3. 强制添加远程源
           git remote add origin $WRT_REPO
           
-          # 获取并切换版本
+          # 4. 获取并切换版本 (使用特定 HASH)
           git fetch --depth 1 origin $WRT_BRANCH
           git checkout FETCH_HEAD
           
