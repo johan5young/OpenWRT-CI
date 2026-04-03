@@ -1,0 +1,36 @@
+name: Cache-Keep-Alive
+
+on:
+  schedule:
+    # 每 6 天的凌晨 0 点（UTC）运行一次
+    - cron: '0 0 */6 * *'
+  workflow_dispatch:
+    # 允许你手动点击按钮触发测试
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          # 这里填入你之前日志里确定的稳定 HASH
+          echo "WRT_HASH=e9638e8" >> $GITHUB_ENV
+          echo "WRT_CONFIG=IPQ60XX-WIFI-YES" >> $GITHUB_ENV
+          echo "WRT_INFO=VIKINGYFY" >> $GITHUB_ENV
+
+      - name: Trigger Cache Restore
+        uses: actions/cache@v4
+        with:
+          # 必须与 WRT-CORE.yml 中的 key 逻辑完全一致才能命中
+          key: v1-${{env.WRT_CONFIG}}-${{env.WRT_HASH}}
+          restore-keys: v1-${{env.WRT_CONFIG}}-
+          path: |
+            ./wrt/.ccache
+            ./wrt/staging_dir/host
+            ./wrt/staging_dir/toolchain-aarch64*
+
+      - name: Refresh Success
+        run: echo "Cache has been touched and kept alive!"
