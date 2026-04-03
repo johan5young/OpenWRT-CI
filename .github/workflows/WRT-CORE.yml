@@ -102,18 +102,20 @@ jobs:
 
       - name: Clone Code (Pinned Version)
         run: |
-          cd ./wrt/
+          # 1. 直接进入物理挂载目录进行强力清理
+          cd /mnt/build_wrt
           
-          # 1. 彻底清理可能导致冲突的 Git 索引文件和配置
-          rm -rf .git
+          # 使用 sudo 强制删除 .git 文件夹及其所有者锁定的内容
+          sudo rm -rf .git
           
-          # 2. 重新初始化
+          # 2. 返回当前工作空间下的 wrt 目录
+          cd $GITHUB_WORKSPACE/wrt/
+          
+          # 3. 重新初始化并强制绑定远程源
           git init
-          
-          # 3. 强制添加远程源
           git remote add origin $WRT_REPO
           
-          # 4. 获取并切换版本 (使用特定 HASH)
+          # 4. 获取并切换版本
           git fetch --depth 1 origin $WRT_BRANCH
           git checkout FETCH_HEAD
           
