@@ -100,6 +100,8 @@ jobs:
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
+
+
       - name: Clone Code (Pinned Version)
         run: |
           # 1. 直接进入物理挂载目录进行强力清理
@@ -124,7 +126,6 @@ jobs:
           
           echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
 
-          
 
       - name: Check Scripts
         run: |
