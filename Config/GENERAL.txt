@@ -101,7 +101,7 @@ CONFIG_PACKAGE_luci-app-advancedplus=y
 # 3. 磁盘与管理
 CONFIG_PACKAGE_luci-app-partexp=y
 CONFIG_PACKAGE_luci-app-diskman=y
-CONFIG_PACKAGE_luci-app-quickfile=y
+CONFIG_PACKAGE_luci-app-filebrowser=y
 CONFIG_PACKAGE_luci-app-lucky=y
 
 
