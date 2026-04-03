@@ -128,3 +128,9 @@ UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"
 UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
+#!/bin/bash
+# 示例：强制更新 Passwall 到最新源码
+# rm -rf feeds/luci/applications/luci-app-passwall2
+# git clone --depth=1 https://github.com/xiaorouji/openwrt-passwall.git package/passwall2
+# 可以在此处添加你自选的非官方仓库驱动
+
