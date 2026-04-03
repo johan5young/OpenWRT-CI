@@ -124,15 +124,16 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is 
 
 #!/bin/bash
 
-# ============================================================
-# NN6000 V2 (ImmortalWrt Snapshot) 终极修复脚本   gemini版
-# 策略：物理切除报错源 + 建立虚拟重定向包 + 锁定 FW4 体系
-# ============================================================
+# =========================================================
+# 脚本名称: Settings.sh    gemini成功后再次优化版
+# 适用架构: NN6000 V2 (MediaTek MT7986)
+# 核心功能: 解决递归依赖、切断旧版防火墙、优化编译环境
+# =========================================================
 
-echo "开始执行深层环境清理与依赖修补..."
+echo "🚀 正在执行深度环境修补与配置优化..."
 
-# 1. 物理切除导致 Kconfig 递归报错/依赖缺失的源码目录
-# 这些包在快照版中存在逻辑 Bug 或会导致编译链中断，且路由器基本不需要
+# 1. 物理移除冲突或冗余的软件包源码
+# 这些包会导致 Recursive Dependency (循环依赖) 或在 aarch64 上编译报错
 REMOVE_LIST=(
     "package/feeds/packages/fwupd"
     "package/feeds/packages/openvswitch"
@@ -141,30 +142,24 @@ REMOVE_LIST=(
     "package/feeds/packages/fail2ban"
     "package/feeds/packages/onionshare-cli"
     "package/feeds/packages/setools"
-    "package/feeds/packages/selinux-python"
-    "package/feeds/packages/luci-app-timewol"
-    "package/feeds/base/iptables-zz-legacy"
+    "package/feeds/base/iptables-zz-legacy" # 彻底移除原有的冲突包
 )
 
-echo "1. 正在物理剔除不稳定源码源..."
 for dir in "${REMOVE_LIST[@]}"; do
     if [ -d "$dir" ]; then
         rm -rf "$dir"
-        echo "   ✓ 已移除: $dir"
+        echo "  - 已清理冲突路径: $dir"
     fi
 done
 
-# 2. 执行定向重定向（修正其他插件 Makefile 里的硬编码点名）
-echo "2. 正在执行 Makefile 依赖引导..."
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables-zz-legacy/+iptables-nft/g' {} + 2>/dev/null
-# 针对直接点名 +iptables 的情况，引导至现代版本
-find package/ feeds/ -name "Makefile" -type f -exec sed -i 's/+iptables$/+iptables-nft/g' {} + 2>/dev/null
+# 2. 建立虚拟占位包 (iptables-zz-legacy)
+# 目的：满足 Passwall 2 等插件对 'iptables-zz-legacy' 的命名依赖
+# 方案：创建一个空包，只指向现代化的 nft 依赖，从而骗过编译器并切断循环依赖链
+echo "  - 正在注入防火墙虚拟兼容层..."
+STUB_DIR="package/feeds/base/iptables-zz-legacy"
+mkdir -p "$STUB_DIR"
 
-# 3. 创建虚拟兼容包 (Stub Package)
-# 目的：骗过那些死活要找 iptables-zz-legacy 的插件，使其转向 firewall4
-echo "3. 正在创建虚拟定向包 iptables-zz-legacy -> firewall4 ..."
-mkdir -p package/feeds/base/iptables-zz-legacy
-cat <<EOF > package/feeds/base/iptables-zz-legacy/Makefile
+cat <<EOF > "$STUB_DIR/Makefile"
 include \$(TOPDIR)/rules.mk
 
 PKG_NAME:=iptables-zz-legacy
@@ -177,10 +172,12 @@ define Package/iptables-zz-legacy
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Fake Compatibility Layer for Firewall4
-  DEPENDS:=+firewall4 +iptables-nft
+  # 核心：将旧名映射到现代组件，不直接依赖 firewall4 从而打破递归
+  DEPENDS:=+kmod-nft-core +iptables-nft +xtables-nft
 endef
 
 define Build/Compile
+	# 虚拟包无需编译
 endef
 
 define Package/iptables-zz-legacy/install
@@ -190,57 +187,39 @@ endef
 \$(eval \$(call BuildPackage,iptables-zz-legacy))
 EOF
 
-# 4. 注入核心配置并封杀递归包
-echo "4. 正在锁定 .config 防火墙体系..."
-# 清除旧的冲突标记
+# 3. 修正 .config 中的防火墙与内核配置
+# 强制移除旧版防火墙标志，确保使用 Firewall4 (nftables) 体系
+echo "  - 正在优化 .config 防火墙架构..."
 sed -i '/CONFIG_PACKAGE_firewall/d' .config
 sed -i '/CONFIG_PACKAGE_iptables/d' .config
 
 {
-    # 强制开启现代防火墙架构
     echo "CONFIG_PACKAGE_firewall4=y"
     echo "CONFIG_PACKAGE_iptables-nft=y"
     echo "CONFIG_PACKAGE_ip6tables-nft=y"
     echo "CONFIG_PACKAGE_xtables-nft=y"
-    echo "CONFIG_PACKAGE_ebtables-nft=y"
-    
-    # 显式禁用导致死循环和冲突的包
-    echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set"
-    echo "# CONFIG_PACKAGE_firewall is not set"
-    echo "# CONFIG_PACKAGE_firewall3 is not set"
-    echo "# CONFIG_PACKAGE_openvswitch is not set"
-    echo "# CONFIG_PACKAGE_fwupd is not set"
-    echo "# CONFIG_PACKAGE_fwupd-libs is not set"
-    
-    # 保护核心内核转发模块 (Quickfile/Passwall 所需)
-    echo "CONFIG_PACKAGE_kmod-ipt-core=y"
-    echo "CONFIG_PACKAGE_kmod-ipt-nat=y"
-    echo "CONFIG_PACKAGE_kmod-ipt-tproxy=y"
+    # 显式关闭旧版组件
+    echo "# CONFIG_PACKAGE_firewall is not set" >> .config
+    echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
 } >> .config
 
-# 5. 禁用已知会强行拉回 legacy 的高风险插件
-echo "5. 隔离可能引发二次冲突的插件..."
-for pkg in mwan3 qos-scripts shorewall shorewall6 wifidog libreswan strongswan nodogsplash; do
-    sed -i "/CONFIG_PACKAGE_${pkg}=y/d" .config
-    echo "# CONFIG_PACKAGE_${pkg} is not set" >> .config
-done
+# 4. 基础体验优化
+# 默认修改登录地址（根据你的 WRT_IP 变量，或在此手动指定）
+#
+echo "  - 设置默认登录 IP..."
+# 如果 yml 传入了 WRT_IP，则优先使用，否则默认 192.168.10.1
+DEFAULT_IP=${WRT_IP:-"192.168.10.1"}
+sed -i "s/192.168.1.1/$DEFAULT_IP/g" package/base-files/files/bin/config_generate
 
-# 6. 执行依赖解析与最终清洗
-echo "6. 正在执行 make defconfig 最终校验..."
-make defconfig
+# 5. 性能与加速选项
+# 开启 Ccache 支持（如果 yml 中配置了路径）
+echo "CONFIG_CCACHE=y" >> .config
 
-# 再次确保 legacy 没有被意外勾选（双重保险）
-if grep -q "CONFIG_PACKAGE_iptables-zz-legacy=y" .config; then
-    sed -i 's/CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/g' .config
-    make defconfig
-fi
+# 禁用 LLVM 构建（除非必须），这能显著缩短你的初次编译时间
+# 只有当你确定需要 eBPF 监控等功能时才开启它
+echo "# CONFIG_USE_LLVM is not set" >> .config
 
-echo "============================================================"
-echo "✓ 依赖修补完成！"
-echo "✓ 递归依赖已通过物理切除修复。"
-echo "✓ 虚拟定向包已就位，将引导系统使用现代防火墙。"
-echo "============================================================"
-
+echo "✅ Settings.sh 执行完成，环境已就绪。"
 
 
 # 最后清理配置，确保生效
