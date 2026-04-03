@@ -124,7 +124,6 @@ jobs:
           
           echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
 
-
           
 
       - name: Check Scripts
