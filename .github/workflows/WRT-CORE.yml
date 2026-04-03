@@ -117,10 +117,18 @@ jobs:
 
       - name: Clone Code (Pinned Version)
         run: |
-          git clone $WRT_REPO ./wrt/
+          # 进入已经由 ln -s 创建好的 wrt 目录
           cd ./wrt/
-          # 锁定版本以稳定工具链和内核，避免重复编译 LLVM
-          git checkout e9638e8 
+          
+          # 初始化并拉取代码，避免 destination path already exists 错误
+          git init
+          git remote add origin $WRT_REPO
+          git fetch --depth 1 origin $WRT_BRANCH
+          git checkout FETCH_HEAD
+          
+          # 锁定到你的稳定版本 ID
+          git checkout e9638e8
+          
           echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
 
       - name: Check Caches (Enhanced)
