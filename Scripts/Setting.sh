@@ -153,13 +153,23 @@ for dir in "${REMOVE_LIST[@]}"; do
 done
 
 
-# 4. 基础体验优化
-# 默认修改登录地址（根据你的 WRT_IP 变量，或在此手动指定）
-#
-echo "  - 设置默认登录 IP..."
-# 如果 yml 传入了 WRT_IP，则优先使用，否则默认 192.168.10.1
-DEFAULT_IP=${WRT_IP:-"192.168.10.1"}
-sed -i "s/192.168.1.1/$DEFAULT_IP/g" package/base-files/files/bin/config_generate
+# 3. 修正 .config 中的防火墙与内核配置
+# 强制移除旧版防火墙标志，确保使用 Firewall4 (nftables) 体系
+echo "  - 正在优化 .config 防火墙架构..."
+sed -i '/CONFIG_PACKAGE_firewall/d' .config
+sed -i '/CONFIG_PACKAGE_iptables/d' .config
+
+{
+    echo "CONFIG_PACKAGE_firewall4=y"
+    echo "CONFIG_PACKAGE_iptables-nft=y"
+    echo "CONFIG_PACKAGE_ip6tables-nft=y"
+    echo "CONFIG_PACKAGE_xtables-nft=y"
+    # 显式关闭旧版组件
+    echo "# CONFIG_PACKAGE_firewall is not set" >> .config
+    echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
+} >> .config
+
+
 
 # 5. 性能与加速选项
 # 开启 Ccache 支持（如果 yml 中配置了路径）
