@@ -2,9 +2,9 @@
 # Copyright (C) 2026 VIKINGYFY
 
 # 云编译公用核心 - 增强版（支持容错下载、多源镜像、测试模式）
-#name: WRT-CORE
+name: WRT-CORE
 
-#on:
+on:
   workflow_call:
     inputs:
       WRT_CONFIG:
@@ -90,6 +90,14 @@ jobs:
           sudo chown $USER:$USER /mnt/build_wrt
           sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
+      - name: Expand Swap Space
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Initialization Values
         run: |
           echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
@@ -103,9 +111,7 @@ jobs:
       - name: Clone Code
         run: |
           git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
-
           cd ./wrt/ && echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
-
           PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
           if [ -f "$PROJECT_MIRRORS_FILE" ]; then
             sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
@@ -120,36 +126,12 @@ jobs:
         if: env.WRT_TEST != 'true'
         uses: actions/cache@main
         with:
-          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
-          restore-keys: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
+          key: v1-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
+          restore-keys: v1-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
           path: |
             ./wrt/.ccache
             ./wrt/staging_dir/host*
             ./wrt/staging_dir/tool*
-
-      - name: Update Caches
-        if: env.WRT_TEST != 'true'
-        run: |
-          if [ -d "./wrt/staging_dir" ]; then
-            find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
-              find "$DIR" -type f -exec touch {} +
-            done
-
-            mkdir -p ./wrt/tmp && echo "1" > ./wrt/tmp/.build
-
-            echo "toolchain skiped done!"
-          else
-            echo "caches missed!"
-          fi
-
-          if ${{steps.check-cache.outputs.cache-hit != 'true'}}; then
-            CACHE_LIST=$(gh cache list --key "$WRT_CONFIG-$WRT_INFO" | cut -f 1)
-            for CACHE_KEY in $CACHE_LIST; do
-              gh cache delete $CACHE_KEY
-            done
-
-            echo "caches cleanup done!"
-          fi
 
       - name: Update Feeds
         id: update_feeds
@@ -168,40 +150,52 @@ jobs:
       - name: Custom Settings
         run: |
           cd ./wrt/
-
           if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
           else
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
           fi
-
           echo "检查并确保关键插件存在..."
-          for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall; do
-            if ! grep -q "^${pkg}=y" .config; then
-              echo "${pkg}=y" >> .config
-            fi
+          for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall CONFIG_PACKAGE_open-app-filter CONFIG_PACKAGE_oaf; do
+            sed -i "/^# $pkg is not set/d" .config
+            echo "${pkg}=y" >> .config
           done
-          
-          if ! grep -q "^CONFIG_PACKAGE_open-app-filter=y" .config; then
-            echo "CONFIG_PACKAGE_open-app-filter=y" >> .config
-          fi
-          if ! grep -q "^CONFIG_PACKAGE_oaf=y" .config; then
-            echo "CONFIG_PACKAGE_oaf=y" >> .config
-          fi
-
           $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig -j$(nproc) && make clean -j$(nproc)
+
+
+      - name: Firewall Components Conflict Check
+        run: |
+          cd ./wrt/
+          echo "::group::防灾预检：FW3/FW4 冲突检查"
+          check_conflict() {
+            if grep -q "CONFIG_PACKAGE_firewall4=y" .config && grep -q "CONFIG_PACKAGE_firewall=y" .config; then
+               return 1
+            fi
+            return 0
+          }
+          if ! check_conflict; then
+            echo "检测到冲突，正在尝试移除 FW3 旧组件..."
+            find ./package -type d -name "luci-app-firewall" | xargs rm -rf 2>/dev/null || true
+            make defconfig -j$(nproc)
+          fi
+          if ! check_conflict; then
+            echo "::error::FW3/FW4 冲突无法自动修复，请手动检查配置文件！"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+
 
       # ==================== 构建 Host 工具链 ====================
       - name: Build Host Tools and Toolchain
         id: build_host_tools
-        # 正式编译时总是构建；测试模式下仅当启用单包测试时构建
         if: env.WRT_TEST != 'true' || env.WRT_SINGLE_TEST == 'true'
         run: |
           cd ./wrt/
           echo "::group::Building host tools and toolchain"
-          make tools/install -j$(nproc)
-          make toolchain/install -j$(nproc)
+          make tools/install -j$(nproc) || make tools/install -j1 V=s
+          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
           echo "::endgroup::"
 
       # ==================== 增强下载容错（优化版，避免重复循环） ====================
@@ -319,178 +313,77 @@ jobs:
           echo "::endgroup::"
 
       # ==================== 编译固件（测试模式/正式编译） ====================
-      - name: Compile Firmware (测试模式或正式编译)
-        id: compile
-        timeout-minutes: 350
-        env:
-          CCACHE_DIR: ./wrt/.ccache
+      - name: Compile Firmware (测试模式)
+        if: env.WRT_TEST == 'true'
+        id: compile_test
         run: |
           cd ./wrt/
+          echo "============================"
+          echo "测试模式：只进行配置检查和单包编译"
+          echo "============================"
+          mkdir -p ./test_output/
           
-          if [[ "$WRT_TEST" == "true" ]]; then
-            echo "============================"
-            echo "测试模式：只进行配置检查和单包编译"
-            echo "============================"
-            
-            mkdir -p ./test_output/
-            
-            # 1. 配置语法检查（改进版）
-            echo "[1/4] 配置语法检查..."
-            make defconfig -j1 2>&1 | tee config_check.log
-            if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "✓ 配置语法检查通过"
-            else
-              echo "::error::配置文件生成失败！"
-              cp config_check.log ./test_output/
-            fi
-            
-            # 2. 检查关键包是否存在（使用通用 find）
-            echo "[2/4] 检查关键包..."
-            for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall; do
-              if find . -path "*/$pkg" -type d -print -quit | grep -q .; then
-                echo "✓ $pkg 包存在"
-              else
-                echo "::error::✗ $pkg 包不存在"
-              fi
-            done
-            
-            # 3. 单包编译测试（仅在启用时执行）
+          echo "[1/4] 配置语法检查..."
+          make defconfig -j1 2>&1 | tee config_check.log
+          
+          echo "[2/4] 检查关键包..."
+          for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall; do
+            if find . -path "*/$pkg" -type d -print -quit | grep -q .; then echo "✓ $pkg 包存在"; fi
+          done
+          
+          if [[ "$WRT_SINGLE_TEST" == "true" ]]; then
             echo "[3/4] 单包编译测试..."
-            if [[ "$WRT_SINGLE_TEST" == "true" ]]; then
-              # 编译 OAF
-              echo "编译 OAF..."
-              make package/oaf/compile -j1 V=s 2>&1 | tee compile_oaf.log
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✓ OAF 编译成功"
-                find bin/ -name "*oaf*.ipk" -o -name "*oaf*.apk" -exec cp {} ./test_output/ \;
-              else
-                echo "::error::✗ OAF 编译失败"
-                tail -100 compile_oaf.log > ./test_output/oaf_error.log
-              fi
-              
-              # 编译 open-app-filter
-              echo "编译 open-app-filter..."
-              make package/open-app-filter/compile -j1 V=s 2>&1 | tee compile_oaf_daemon.log
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✓ open-app-filter 编译成功"
-                find bin/ -name "*open-app-filter*.ipk" -o -name "*open-app-filter*.apk" -exec cp {} ./test_output/ \;
-              else
-                echo "::error::✗ open-app-filter 编译失败"
-                tail -100 compile_oaf_daemon.log > ./test_output/open-app-filter_error.log
-              fi
-              
-              # 编译 luci-app-oaf
-              echo "编译 luci-app-oaf..."
-              make package/luci-app-oaf/compile -j1 V=s 2>&1 | tee compile_luci_oaf.log
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✓ luci-app-oaf 编译成功"
-                find bin/ -name "*luci-app-oaf*.ipk" -o -name "*luci-app-oaf*.apk" -exec cp {} ./test_output/ \;
-              else
-                echo "::error::✗ luci-app-oaf 编译失败"
-                tail -100 compile_luci_oaf.log > ./test_output/luci-app-oaf_error.log
-              fi
-              
-              # 编译 passwall
-              echo "编译 passwall..."
-              make package/luci-app-passwall/compile -j1 V=s 2>&1 | tee compile_pw.log
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✓ passwall 编译成功"
-                find bin/ -name "*passwall*.ipk" -o -name "*passwall*.apk" -exec cp {} ./test_output/ \;
-              else
-                echo "::error::✗ passwall 编译失败"
-                tail -100 compile_pw.log > ./test_output/passwall_error.log
-              fi
-            else
-              echo "跳过单包编译（未启用 WRT_SINGLE_TEST）"
-            fi
-            
-            # 复制配置文件（始终保留）
-            cp .config ./test_output/Config-Test.txt
-            
-            echo "[4/4] 测试产物列表："
-            ls -lh ./test_output/ || echo "无编译产物"
-            
-            echo "============================"
-            echo "测试模式完成"
-            echo "============================"
-            
-          else
-            echo "============================"
-            echo "正式编译：开始编译固件"
-            echo "============================"
-            # 正式编译前再次确保下载完整
-            make download -j$(nproc) || make download -j1 V=s
-
-            # 启用 ccache（如果未自动生效）
-            export PATH="/usr/lib/ccache:$PATH"
-
-            # 全量编译，2 个并行任务，详细输出，保存日志
-            echo "开始全量编译（2 线程，详细日志）..."
-            make -j2 V=s 2>&1 | tee build.log
-
-            # 检查核心包是否在日志中出现错误
-            CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall"
-            CORE_FAILED=0
-            for pkg in $CORE_PACKAGES; do
-              if grep -q "make\[.*\]: \*\*\* \[.*package/$pkg.*\] Error" build.log; then
-                echo "::error::核心包 $pkg 编译失败！"
-                CORE_FAILED=1
-              fi
+            for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall; do
+              make package/$pkg/compile -j$(nproc) || make package/$pkg/compile -j1 V=s
+              find bin/ -name "*$pkg*" -exec cp {} ./test_output/ \;
             done
-            if [ $CORE_FAILED -eq 1 ]; then
-              exit 1
-            fi
+          fi
+          cp .config ./test_output/Config-Test.txt
 
-            # 最终检查固件是否生成
-            if [ ! -d "bin/targets" ] || [ -z "$(find bin/targets -name '*.bin' -o -name '*.img' -o -name '*.trx' 2>/dev/null)" ]; then
-              echo "::error::未生成任何固件文件，编译完全失败！"
-              exit 1
-            else
-              echo "固件编译完成，部分非核心包可能失败但已忽略。"
-            fi
+      - name: Compile Phase 1 - Target (Kernel)
+        if: env.WRT_TEST != 'true'
+        run: |
+          cd ./wrt/
+          echo "Phase 1: 编译内核与核心驱动 (全线程)"
+          make target/compile -j$(nproc) || make target/compile -j1 V=s
+
+      - name: Compile Phase 2 - Package Compile (j2 Mode)
+        if: env.WRT_TEST != 'true'
+        run: |
+          cd ./wrt/
+          echo "Phase 2: 全量插件编译 (双线程稳定性模式)"
+          export PATH="/usr/lib/ccache:$PATH"
+          if ! make package/compile -j2; then
+            echo "::warning::插件编译失败，尝试单线程捕获日志..."
+            make package/compile -j1 V=s 2>&1 | tee build_error.log | tail -n 200
+            exit 1
           fi
 
-      # ==================== 上传测试产物（仅测试模式） ====================
+      - name: Compile Phase 3 - Image Packaging
+        if: env.WRT_TEST != 'true'
+        run: |
+          cd ./wrt/
+          echo "Phase 3: 封装最终镜像 (全线程)"
+          make package/install -j$(nproc)
+          make target/install -j$(nproc)
+
       - name: Upload Test Artifacts to Release
-        # 仅当测试模式、启用了单包编译、且是手动触发时，创建 Release
         if: env.WRT_TEST == 'true' && env.WRT_SINGLE_TEST == 'true' && github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@master
         with:
-          tag_name: test-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          tag_name: test-${{env.WRT_CONFIG}}-${{env.WRT_DATE}}
           name: 测试编译产物 ${{env.WRT_CONFIG}} (${{env.WRT_DATE}})
-          body: |
-            这是测试模式编译的单包 APK/IPK 文件。
-            包含以下组件：
-            - OAF
-            - open-app-filter
-            - luci-app-oaf
-            - luci-app-passwall
-            - 相关依赖（如有）
-            
-            配置文件：Config-Test.txt
-            错误日志见附件。
-            
-            **注意**：此 Release 仅用于测试，非正式固件。
-          files: |
-            ./wrt/test_output/*
+          files: ./wrt/test_output/*
           prerelease: true
-          draft: false
-          fail_on_unmatched_files: false
 
       - name: Upload Test Artifacts (Fallback)
-        # 测试模式下，如果未启用单包编译或非手动触发，则上传 Artifacts
         if: env.WRT_TEST == 'true' && (env.WRT_SINGLE_TEST != 'true' || github.event_name != 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: test-packages-${{env.WRT_DATE}}
           path: |
             ./wrt/test_output/*
-            ./wrt/bin/packages/*/base/*oaf*
-            ./wrt/bin/packages/*/base/*passwall*
             ./wrt/config_check.log
-            ./wrt/compile_*.log
-          if-no-files-found: warn
-          retention-days: 7
 
       - name: Machine Information
         if: always()
