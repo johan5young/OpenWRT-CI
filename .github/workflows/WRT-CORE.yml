@@ -158,17 +158,26 @@ jobs:
       - name: Custom Settings
         run: |
           cd ./wrt/
+          # 根据配置模式合并 .config 文件
           if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
           else
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
           fi
+
           echo "检查并确保关键插件存在..."
+          # 强制开启 OAF 和 PassWall，防止被 defconfig 刷掉
           for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall CONFIG_PACKAGE_open-app-filter CONFIG_PACKAGE_oaf; do
             sed -i "/^# $pkg is not set/d" .config
             echo "${pkg}=y" >> .config
           done
+
+          # 关键修复：赋予脚本执行权限并运行
+          echo "正在执行自定义脚本: Settings.sh"
+          chmod +x $GITHUB_WORKSPACE/Scripts/Settings.sh
           $GITHUB_WORKSPACE/Scripts/Settings.sh
+
+          # 应用配置并清理环境
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
 
