@@ -89,51 +89,50 @@ echo "CONFIG_PACKAGE_oaf=y" >> .config
 # ---------精简编译 节约时间 精简无用驱动或插件------------------------------------------------
 # 1. 彻底禁用 USB 手机网络共享与苹果设备支持 (iPhone/Android Tethering)
 # ---------------------------------------------------------
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-ipheth\.y/# CONFIG_PACKAGE_kmod-usb-net-ipheth is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_libimobiledevice\.y/# CONFIG_PACKAGE_libimobiledevice is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_usbmuxd\.y/# CONFIG_PACKAGE_usbmuxd is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rndis\.y/# CONFIG_PACKAGE_kmod-usb-net-rndis is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-ipheth=y/# CONFIG_PACKAGE_kmod-usb-net-ipheth is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_libimobiledevice=y/# CONFIG_PACKAGE_libimobiledevice is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_usbmuxd=y/# CONFIG_PACKAGE_usbmuxd is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rndis=y/# CONFIG_PACKAGE_kmod-usb-net-rndis is not set/g' .config
 # ---------------------------------------------------------
 # 2. 彻底禁用外置 USB 有线网卡驱动 (ASIX/Realtek/CDC)
 # ---------------------------------------------------------
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net\.y/# CONFIG_PACKAGE_kmod-usb-net is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-asix\.y/# CONFIG_PACKAGE_kmod-usb-net-asix is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-asix-ax88179\.y/# CONFIG_PACKAGE_kmod-usb-net-asix-ax88179 is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-eem\.y/# CONFIG_PACKAGE_kmod-usb-net-cdc-eem is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ether\.y/# CONFIG_PACKAGE_kmod-usb-net-cdc-ether is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ncm\.y/# CONFIG_PACKAGE_kmod-usb-net-cdc-ncm is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-subset\.y/# CONFIG_PACKAGE_kmod-usb-net-cdc-subset is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8150\.y/# CONFIG_PACKAGE_kmod-usb-net-rtl8150 is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8152\.y/# CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net=y/# CONFIG_PACKAGE_kmod-usb-net is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-asix=y/# CONFIG_PACKAGE_kmod-usb-net-asix is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y/# CONFIG_PACKAGE_kmod-usb-net-asix-ax88179 is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-eem is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-ether is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-ncm is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-subset is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8150=y/# CONFIG_PACKAGE_kmod-usb-net-rtl8150 is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-rtl8152=y/# CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set/g' .config
 # ---------------------------------------------------------
 # 3. 彻底禁用 4G/5G 模块与 WWAN 拨号驱动 (QMI/MBIM/Huawei)
 # ---------------------------------------------------------
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-mbim\.y/# CONFIG_PACKAGE_kmod-usb-net-cdc-mbim is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm\.y/# CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan\.y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom\.y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel\.y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-usb-net-sierrawireless\.y/# CONFIG_PACKAGE_kmod-usb-net-sierrawireless is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y/# CONFIG_PACKAGE_kmod-usb-net-cdc-mbim is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y/# CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom=y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-fibocom is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel=y/# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan-quectel is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-net-sierrawireless=y/# CONFIG_PACKAGE_kmod-usb-net-sierrawireless is not set/g' .config
 # ---------------------------------------------------------
 # 4. 彻底禁用 USB 音频支持 (USB Audio/Sound Core)
 # ---------------------------------------------------------
-sed -i 's/CONFIG_PACKAGE_kmod-usb-audio\.y/# CONFIG_PACKAGE_kmod-usb-audio is not set/g' .config
-sed -i 's/CONFIG_PACKAGE_kmod-sound-core\.y/# CONFIG_PACKAGE_kmod-sound-core is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-usb-audio=y/# CONFIG_PACKAGE_kmod-usb-audio is not set/g' .config
+sed -i 's/CONFIG_PACKAGE_kmod-sound-core=y/# CONFIG_PACKAGE_kmod-sound-core is not set/g' .config
 
 
 
 #!/bin/bash
-
 # =========================================================
-# 脚本名称: Settings.sh    gemini成功后再次优化版
-# 适用架构: NN6000 V2 (MediaTek MT7986)
-# 核心功能: 解决递归依赖、切断旧版防火墙、优化编译环境
+# 脚本名称: Settings.sh (极致纯净 & OAF 兼容版)
+# 适用架构: NN6000 V2 (MediaTek MT7986 / IPQ60xx)
+# 核心功能: 锁定 FW4 架构、注入 OAF、兼容老版 PassWall
 # =========================================================
 
 echo "🚀 正在执行深度环境修补与配置优化..."
 
 # 1. 物理移除冲突或冗余的软件包源码
-# 这些包会导致 Recursive Dependency (循环依赖) 或在 aarch64 上编译报错
+# 解决 Recursive Dependency (循环依赖) 并彻底断绝 fw3 念想
 REMOVE_LIST=(
     "package/feeds/packages/fwupd"
     "package/feeds/packages/openvswitch"
@@ -142,7 +141,7 @@ REMOVE_LIST=(
     "package/feeds/packages/fail2ban"
     "package/feeds/packages/onionshare-cli"
     "package/feeds/packages/setools"
-    "package/feeds/base/iptables-zz-legacy" # 彻底移除原有的冲突包
+    "package/feeds/base/iptables-zz-legacy" 
 )
 
 for dir in "${REMOVE_LIST[@]}"; do
@@ -152,35 +151,40 @@ for dir in "${REMOVE_LIST[@]}"; do
     fi
 done
 
-
-# 3. 修正 .config 中的防火墙与内核配置
-# 强制移除旧版防火墙标志，确保使用 Firewall4 (nftables) 体系
-echo "  - 正在优化 .config 防火墙架构..."
+# 2. 彻底重构 .config 防火墙架构
+# 采用“先破后立”原则：先删除所有旧版标记，再注入 FW4 核心
+echo "  - 正在锁定 Firewall4 (nftables) 体系..."
 sed -i '/CONFIG_PACKAGE_firewall/d' .config
 sed -i '/CONFIG_PACKAGE_iptables/d' .config
+sed -i '/CONFIG_PACKAGE_ip6tables/d' .config
 
 {
     echo "CONFIG_PACKAGE_firewall4=y"
+    # 核心兼容层：让 OAF 和老版 PassWall 在 FW4 下正常工作的“氧气瓶”
     echo "CONFIG_PACKAGE_iptables-nft=y"
     echo "CONFIG_PACKAGE_ip6tables-nft=y"
     echo "CONFIG_PACKAGE_xtables-nft=y"
-    # 显式关闭旧版组件
-    echo "# CONFIG_PACKAGE_firewall is not set" >> .config
-    echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
+    echo "CONFIG_PACKAGE_kmod-nft-tproxy=y"
+    # 显式关闭旧版组件，防止后台提示冲突
+    echo "# CONFIG_PACKAGE_firewall is not set"
+    echo "# CONFIG_PACKAGE_firewall3 is not set"
 } >> .config
 
+# 3. 注入核心插件配置 (OAF 应用过滤)
+echo "  - 正在锁定 OAF 行为管理组件..."
+{
+    echo "CONFIG_PACKAGE_luci-app-oaf=y"
+    echo "CONFIG_PACKAGE_open-app-filter=y"
+    echo "CONFIG_PACKAGE_oaf=y"
+} >> .config
 
-
-# 5. 性能与加速选项
-# 开启 Ccache 支持（如果 yml 中配置了路径）
+# 4. 性能与编译加速
+echo "  - 优化编译环境参数..."
 echo "CONFIG_CCACHE=y" >> .config
-
-# 禁用 LLVM 构建（除非必须），这能显著缩短你的初次编译时间
-# 只有当你确定需要 eBPF 监控等功能时才开启它
+# 除非需要 eBPF，否则禁用 LLVM 以大幅缩短编译时间
 echo "# CONFIG_USE_LLVM is not set" >> .config
 
-echo "✅ Settings.sh 执行完成，环境已就绪。"
-
-
-# 最后清理配置，确保生效
+# 5. 最后清理：确保配置文件格式正确，移除 Windows 换行符
 sed -i 's/\r$//' .config
+
+echo "✅ Settings.sh 执行完成，纯净架构环境已就绪。"
