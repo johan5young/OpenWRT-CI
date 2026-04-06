@@ -103,10 +103,8 @@ UPDATE_VERSION "sing-box"
 UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"
 
 # 拉取 passwall 依赖包（使用最新版，可选）
-UPDATE_PACKAGE "passwall-packages" "Openwrt-Passwall/openwrt-passwall-packages" "main" "pkg"
+UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
 
-# 拉取 luci-app-passwall2
-UPDATE_PACKAGE "luci-app-passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 
 # 拉取 OpenAppFilter（三种组件），并重命名 luci-app-appfilter 为 luci-app-oaf
 UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "open-app-filter luci-app-appfilter oaf"
