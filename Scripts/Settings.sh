@@ -121,6 +121,12 @@ sed -i 's/CONFIG_PACKAGE_kmod-usb-audio=y/# CONFIG_PACKAGE_kmod-usb-audio is not
 sed -i 's/CONFIG_PACKAGE_kmod-sound-core=y/# CONFIG_PACKAGE_kmod-sound-core is not set/g' .config
 
 
+# 核心：确保系统具备完整的 HTTPS 抓取能力（防止homeproxy拉取不到订阅节点。）
+sed -i "/CONFIG_PACKAGE_wget-nossl=y/d" .config
+echo "CONFIG_PACKAGE_wget-ssl=y" >> .config
+echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
+echo "CONFIG_PACKAGE_libustream-openssl=y" >> .config
+
 
 #!/bin/bash
 # =========================================================
