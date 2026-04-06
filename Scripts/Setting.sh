@@ -129,10 +129,8 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core=y/# CONFIG_PACKAGE_kmod-sound-core is n
 # 核心功能: 锁定 FW4 架构、注入 OAF、兼容老版 PassWall
 # =========================================================
 
-echo "🚀 正在执行深度环境修补与配置优化..."
+echo "🚀 正在执行物理冲突清理..."
 
-# 1. 物理移除冲突或冗余的软件包源码
-# 解决 Recursive Dependency (循环依赖) 并彻底断绝 fw3 念想
 REMOVE_LIST=(
     "package/feeds/packages/fwupd"
     "package/feeds/packages/openvswitch"
@@ -141,27 +139,38 @@ REMOVE_LIST=(
     "package/feeds/packages/fail2ban"
     "package/feeds/packages/onionshare-cli"
     "package/feeds/packages/setools"
-    "package/feeds/base/iptables-zz-legacy" 
+    "package/feeds/base/iptables-zz-legacy" # 彻底移除导致冲突的旧版防火墙包
 )
 
 for dir in "${REMOVE_LIST[@]}"; do
     if [ -d "$dir" ]; then
         rm -rf "$dir"
-        echo "  - 已清理冲突路径: $dir"
+        echo "  - 已从物理路径彻底清理冲突组件: $dir"
     fi
 done
 
-# 2. 修正防火墙架构引导 (擦除旧项，确保系统走向 Firewall4)
-echo "  - 正在重构防火墙为 Firewall4 (nftables)..."
-sed -i '/CONFIG_PACKAGE_firewall/d' .config
-sed -i '/CONFIG_PACKAGE_iptables/d' .config
-sed -i '/CONFIG_PACKAGE_ip6tables/d' .config
+# 2. 强制切断 .config 中的残留依赖链 (不再建立虚拟占位)
+# 逻辑：既然物理包已删，必须确保配置文件里没有任何地方还在引用它，否则编译会因找不到 Makefile 而中止
+echo "  - 正在清理配置文件中的旧版防火墙引用..."
 
+# 删除所有关于旧版防火墙包的选择标记
+sed -i '/CONFIG_PACKAGE_iptables-zz-legacy/d' .config
+sed -i '/CONFIG_PACKAGE_firewall/d' .config
+sed -i '/CONFIG_PACKAGE_firewall3/d' .config
+
+# 显式引导系统走向纯净的 Firewall4 (nftables) 架构
 {
     echo "CONFIG_PACKAGE_firewall4=y"
+    echo "CONFIG_PACKAGE_iptables-nft=y"
+    echo "CONFIG_PACKAGE_ip6tables-nft=y"
+    echo "CONFIG_PACKAGE_xtables-nft=y"
+    # 明确标注不选旧版，防止被其他 Feeds 意外拉回
     echo "# CONFIG_PACKAGE_firewall is not set"
     echo "# CONFIG_PACKAGE_firewall3 is not set"
+    echo "# CONFIG_PACKAGE_iptables-zz-legacy is not set"
 } >> .config
+
+echo "✅ 冲突组件已清理，防火墙架构已锁定为 Nftables。"
 
 # 3. 注入核心插件配置 (OAF 应用过滤)
 echo "  - 正在锁定 OAF 行为管理组件..."
