@@ -2,9 +2,9 @@
 # Copyright (C) 2026 VIKINGYFY
 
 # 云编译公用核心 - 增强版（支持容错下载、多源镜像、测试模式）
-name: WRT-CORE
+#name: WRT-CORE
 
-on:
+#on:
   workflow_call:
     inputs:
       WRT_CONFIG:
@@ -176,7 +176,7 @@ jobs:
           fi
 
           echo "检查并确保关键插件存在..."
-          for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall2; do
+          for pkg in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_luci-app-passwall; do
             if ! grep -q "^${pkg}=y" .config; then
               echo "${pkg}=y" >> .config
             fi
@@ -218,7 +218,7 @@ jobs:
           }
 
           # 定义关键包列表（与 Packages.sh 中的包名一致）
-          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2 sing-box xray-core"
+          CRITICAL_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall sing-box xray-core"
 
           # 提取失败包名（仅当下载失败时）
           FAILED_PKGS=""
@@ -346,7 +346,7 @@ jobs:
             
             # 2. 检查关键包是否存在（使用通用 find）
             echo "[2/4] 检查关键包..."
-            for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall2; do
+            for pkg in oaf open-app-filter luci-app-oaf luci-app-passwall; do
               if find . -path "*/$pkg" -type d -print -quit | grep -q .; then
                 echo "✓ $pkg 包存在"
               else
@@ -390,15 +390,15 @@ jobs:
                 tail -100 compile_luci_oaf.log > ./test_output/luci-app-oaf_error.log
               fi
               
-              # 编译 PassWall2
-              echo "编译 PassWall2..."
-              make package/luci-app-passwall2/compile -j1 V=s 2>&1 | tee compile_pw.log
+              # 编译 passwall
+              echo "编译 passwall..."
+              make package/luci-app-passwall/compile -j1 V=s 2>&1 | tee compile_pw.log
               if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✓ PassWall2 编译成功"
-                find bin/ -name "*passwall2*.ipk" -o -name "*passwall2*.apk" -exec cp {} ./test_output/ \;
+                echo "✓ passwall 编译成功"
+                find bin/ -name "*passwall*.ipk" -o -name "*passwall*.apk" -exec cp {} ./test_output/ \;
               else
-                echo "::error::✗ PassWall2 编译失败"
-                tail -100 compile_pw.log > ./test_output/passwall2_error.log
+                echo "::error::✗ passwall 编译失败"
+                tail -100 compile_pw.log > ./test_output/passwall_error.log
               fi
             else
               echo "跳过单包编译（未启用 WRT_SINGLE_TEST）"
@@ -429,7 +429,7 @@ jobs:
             make -j2 V=s 2>&1 | tee build.log
 
             # 检查核心包是否在日志中出现错误
-            CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall2"
+            CORE_PACKAGES="oaf open-app-filter luci-app-oaf luci-app-passwall"
             CORE_FAILED=0
             for pkg in $CORE_PACKAGES; do
               if grep -q "make\[.*\]: \*\*\* \[.*package/$pkg.*\] Error" build.log; then
@@ -464,7 +464,7 @@ jobs:
             - OAF
             - open-app-filter
             - luci-app-oaf
-            - luci-app-passwall2
+            - luci-app-passwall
             - 相关依赖（如有）
             
             配置文件：Config-Test.txt
