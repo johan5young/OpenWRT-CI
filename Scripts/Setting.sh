@@ -151,21 +151,14 @@ for dir in "${REMOVE_LIST[@]}"; do
     fi
 done
 
-# 2. 彻底重构 .config 防火墙架构
-# 采用“先破后立”原则：先删除所有旧版标记，再注入 FW4 核心
-echo "  - 正在锁定 Firewall4 (nftables) 体系..."
+# 2. 修正防火墙架构引导 (擦除旧项，确保系统走向 Firewall4)
+echo "  - 正在重构防火墙为 Firewall4 (nftables)..."
 sed -i '/CONFIG_PACKAGE_firewall/d' .config
 sed -i '/CONFIG_PACKAGE_iptables/d' .config
 sed -i '/CONFIG_PACKAGE_ip6tables/d' .config
 
 {
     echo "CONFIG_PACKAGE_firewall4=y"
-    # 核心兼容层：让 OAF 和老版 PassWall 在 FW4 下正常工作的“氧气瓶”
-    echo "CONFIG_PACKAGE_iptables-nft=y"
-    echo "CONFIG_PACKAGE_ip6tables-nft=y"
-    echo "CONFIG_PACKAGE_xtables-nft=y"
-    echo "CONFIG_PACKAGE_kmod-nft-tproxy=y"
-    # 显式关闭旧版组件，防止后台提示冲突
     echo "# CONFIG_PACKAGE_firewall is not set"
     echo "# CONFIG_PACKAGE_firewall3 is not set"
 } >> .config
@@ -184,7 +177,9 @@ echo "CONFIG_CCACHE=y" >> .config
 # 除非需要 eBPF，否则禁用 LLVM 以大幅缩短编译时间
 echo "# CONFIG_USE_LLVM is not set" >> .config
 
-# 5. 最后清理：确保配置文件格式正确，移除 Windows 换行符
+# 5. 编译优化与格式清理
+echo "CONFIG_CCACHE=y" >> .config
+echo "# CONFIG_USE_LLVM is not set" >> .config
 sed -i 's/\r$//' .config
 
-echo "✅ Settings.sh 执行完成，纯净架构环境已就绪。"
+echo "✅ 逻辑修正完成，环境已就绪。"
