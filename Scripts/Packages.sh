@@ -118,14 +118,11 @@ fi
 UPDATE_PACKAGE "homeproxy" "VIKINGYFY/homeproxy" "main"
 UPDATE_PACKAGE "partexp" "sirpdboy/luci-app-partexp" "main"
 UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"
-UPDATE_PACKAGE "netwizard" "sirpdboy/luci-app-netwizard" "main"
 UPDATE_PACKAGE "advancedplus" "sirpdboy/luci-app-advancedplus" "main"
 UPDATE_PACKAGE "lucky" "sirpdboy/luci-app-lucky" "main"
 UPDATE_PACKAGE "openlist2" "sbwml/luci-app-openlist2" "main"
 UPDATE_PACKAGE "mosdns" "sbwml/luci-app-mosdns" "v5" "" "v2dat"
 UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"
-UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"
-UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
 #!/bin/bash
