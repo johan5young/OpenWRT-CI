@@ -126,7 +126,7 @@ sed -i 's/CONFIG_PACKAGE_kmod-sound-core=y/# CONFIG_PACKAGE_kmod-sound-core is n
 # =========================================================
 # 脚本名称: Settings.sh (极致纯净 & OAF 兼容版)
 # 适用架构: NN6000 V2 (MediaTek MT7986 / IPQ60xx)
-# 核心功能: 锁定 FW4 架构、注入 OAF、兼容老版 PassWall
+# 核心功能: 锁定 FW4 架构、注入 OAF、兼容老版 
 # =========================================================
 
 echo "🚀 正在执行物理冲突清理..."
