@@ -152,56 +152,6 @@ for dir in "${REMOVE_LIST[@]}"; do
     fi
 done
 
-# 2. 建立虚拟占位包 (iptables-zz-legacy)
-# 目的：满足 Passwall 2 等插件对 'iptables-zz-legacy' 的命名依赖
-# 方案：创建一个空包，只指向现代化的 nft 依赖，从而骗过编译器并切断循环依赖链
-echo "  - 正在注入防火墙虚拟兼容层..."
-STUB_DIR="package/feeds/base/iptables-zz-legacy"
-mkdir -p "$STUB_DIR"
-
-cat <<EOF > "$STUB_DIR/Makefile"
-include \$(TOPDIR)/rules.mk
-
-PKG_NAME:=iptables-zz-legacy
-PKG_VERSION:=999
-PKG_RELEASE:=1
-
-include \$(INCLUDE_DIR)/package.mk
-
-define Package/iptables-zz-legacy
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=Fake Compatibility Layer for Firewall4
-  # 核心：将旧名映射到现代组件，不直接依赖 firewall4 从而打破递归
-  DEPENDS:=+kmod-nft-core +iptables-nft +xtables-nft
-endef
-
-define Build/Compile
-	# 虚拟包无需编译
-endef
-
-define Package/iptables-zz-legacy/install
-	true
-endef
-
-\$(eval \$(call BuildPackage,iptables-zz-legacy))
-EOF
-
-# 3. 修正 .config 中的防火墙与内核配置
-# 强制移除旧版防火墙标志，确保使用 Firewall4 (nftables) 体系
-echo "  - 正在优化 .config 防火墙架构..."
-sed -i '/CONFIG_PACKAGE_firewall/d' .config
-sed -i '/CONFIG_PACKAGE_iptables/d' .config
-
-{
-    echo "CONFIG_PACKAGE_firewall4=y"
-    echo "CONFIG_PACKAGE_iptables-nft=y"
-    echo "CONFIG_PACKAGE_ip6tables-nft=y"
-    echo "CONFIG_PACKAGE_xtables-nft=y"
-    # 显式关闭旧版组件
-    echo "# CONFIG_PACKAGE_firewall is not set" >> .config
-    echo "# CONFIG_PACKAGE_firewall3 is not set" >> .config
-} >> .config
 
 # 4. 基础体验优化
 # 默认修改登录地址（根据你的 WRT_IP 变量，或在此手动指定）
