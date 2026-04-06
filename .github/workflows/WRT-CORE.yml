@@ -92,10 +92,18 @@ jobs:
 
       - name: Expand Swap Space
         run: |
+          echo "正在检查并清理旧的 Swap 空间..."
+          # 如果已挂载则卸载，如果已存在则删除，防止 Text file busy 报错
+          sudo swapoff /swapfile 2>/dev/null || true
+          sudo rm -f /swapfile
+    
+          echo "正在创建 4GB 增强型交换文件..."
           sudo fallocate -l 4G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+    
+          echo "当前内存布局："
           free -h
 
       - name: Initialization Values
