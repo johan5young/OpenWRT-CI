@@ -1,0 +1,47 @@
+name: Build Docker APKs
+
+on:
+  workflow_dispatch: # 这样你可以在 GitHub 页面点一下按钮就手动开始编译
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/build_dir
+            openwrt/dl
+          key: v1-IPQ60XX-WIFI-YES-VIKINGYFY-e9638e8 # 必须完全一致
+
+      - name: Update Feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Fix Config
+        run: |
+          cd openwrt
+          # 强制在现有配置中开启 Docker
+          sed -i 's/CONFIG_PACKAGE_luci-app-docker is not set/CONFIG_PACKAGE_luci-app-docker=y/g' .config 2>/dev/null || echo "CONFIG_PACKAGE_luci-app-docker=y" >> .config
+          sed -i 's/CONFIG_PACKAGE_docker-ce is not set/CONFIG_PACKAGE_docker-ce=y/g' .config 2>/dev/null || echo "CONFIG_PACKAGE_docker-ce=y" >> .config
+          make defconfig
+
+      - name: Compile
+        run: |
+          cd openwrt
+          # 仅编译相关的包
+          make package/utils/docker-ce/compile V=s -j$(nproc)
+          make package/luci/applications/luci-app-docker/compile V=s -j$(nproc)
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Docker-APKs
+          path: openwrt/bin/targets/ipq60xx/generic/packages/*.apk
