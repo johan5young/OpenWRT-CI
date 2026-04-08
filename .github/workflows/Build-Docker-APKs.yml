@@ -1,11 +1,14 @@
-name: Build Docker APKs
+name: Build Docker APKs to Release
 
 on:
-  workflow_dispatch: # 这样你可以在 GitHub 页面点一下按钮就手动开始编译
+  workflow_dispatch: # 手动触发
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write # 必须赋予写入权限才能发布 Release
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,7 +20,7 @@ jobs:
             openwrt/staging_dir
             openwrt/build_dir
             openwrt/dl
-          key: v1-IPQ60XX-WIFI-YES-VIKINGYFY-e9638e8 # 必须完全一致
+          key: v1-IPQ60XX-WIFI-YES-VIKINGYFY-e9638e8
 
       - name: Update Feeds
         run: |
@@ -28,20 +31,37 @@ jobs:
       - name: Fix Config
         run: |
           cd openwrt
-          # 强制在现有配置中开启 Docker
-          sed -i 's/CONFIG_PACKAGE_luci-app-docker is not set/CONFIG_PACKAGE_luci-app-docker=y/g' .config 2>/dev/null || echo "CONFIG_PACKAGE_luci-app-docker=y" >> .config
-          sed -i 's/CONFIG_PACKAGE_docker-ce is not set/CONFIG_PACKAGE_docker-ce=y/g' .config 2>/dev/null || echo "CONFIG_PACKAGE_docker-ce=y" >> .config
+          # 确保开启 APK 模式并勾选 Docker
+          echo "CONFIG_USE_APK=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-docker=y" >> .config
+          echo "CONFIG_PACKAGE_docker-ce=y" >> .config
           make defconfig
 
       - name: Compile
         run: |
           cd openwrt
-          # 仅编译相关的包
+          # 精准编译
           make package/utils/docker-ce/compile V=s -j$(nproc)
           make package/luci/applications/luci-app-docker/compile V=s -j$(nproc)
 
-      - name: Upload
-        uses: actions/upload-artifact@v4
+      - name: Prepare Release Files
+        run: |
+          mkdir -p ./release_files
+          # 收集所有相关的 .apk 文件
+          find openwrt/bin/ -name "*.apk" -exec cp {} ./release_files/ \;
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: Docker-APKs
-          path: openwrt/bin/targets/ipq60xx/generic/packages/*.apk
+          tag_name: Docker-Fix-${{ github.run_id }}
+          name: Docker APK Fix (Build ${{ github.run_id }})
+          body: |
+            ### 编译说明
+            基于缓存: `v1-IPQ60XX-WIFI-YES-VIKINGYFY-e9638e8`
+            包含了缺失的 kmod 模块以及 Docker-CE、LuCI 界面。
+            使用方法: 下载后上传到路由器，执行 `apk add --allow-untrusted *.apk`。
+          files: ./release_files/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
